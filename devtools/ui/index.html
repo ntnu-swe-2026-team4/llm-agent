@@ -1,0 +1,1133 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>llm-framework</title>
+<style>
+  :root {
+    --bg: #f6f5f2; --surface: #ffffff; --surface-2: #f0eee9; --text: #1f1d1a; --muted: #6b665e;
+    --border: #dedad2; --accent: #2f5d8a; --accent-soft: #e3ecf5; --green: #2e7d4f; --green-soft: #e3f2e8;
+    --red: #b23b3b; --red-soft: #f8e5e5; --warn: #9a6a12; --warn-soft: #f8efd9; --user: #e3ecf5;
+    --radius: 10px;
+    --font: "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", system-ui, sans-serif;
+    --mono: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #181715; --surface: #22211e; --surface-2: #2b2a26; --text: #ebe8e2; --muted: #a39e94;
+      --border: #3a3833; --accent: #7fb0e0; --accent-soft: #23313f; --green: #7cc79a; --green-soft: #1f3327;
+      --red: #e88a8a; --red-soft: #3a2323; --warn: #e0b765; --warn-soft: #3a3020; --user: #23313f;
+      color-scheme: dark;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body { background: var(--bg); color: var(--text); font: 14px/1.6 var(--font); display: flex; flex-direction: column; }
+  [hidden] { display: none !important; }
+  select, input, textarea, button { font: inherit; color: var(--text); }
+  select, input[type=text], input[type=number] { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 3px 8px; }
+  textarea { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px; width: 100%; resize: vertical; }
+  .spacer { flex: 1; }
+  .hint { color: var(--muted); font-size: 12px; font-weight: normal; }
+  pre { margin: 0; white-space: pre-wrap; word-break: break-word; font: 13px/1.6 var(--mono); background: var(--surface-2); padding: 8px 10px; border-radius: 8px; }
+
+  /* 按鈕 */
+  .btn { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 4px 12px; cursor: pointer; text-decoration: none; display: inline-block; color: var(--text); white-space: nowrap; }
+  .btn:hover:not(:disabled) { border-color: var(--accent); }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .btn.danger { color: var(--red); }
+  .btn.small { padding: 1px 10px; font-size: 13px; }
+  .icon { border: 0; background: none; cursor: pointer; padding: 0 4px; color: var(--muted); border-radius: 4px; }
+  .icon:hover { color: var(--text); background: var(--surface-2); }
+  button:disabled { opacity: .5; cursor: default; }
+
+  /* 最上面 */
+  header { display: flex; align-items: center; gap: 10px; padding: 8px 16px; border-bottom: 1px solid var(--border); background: var(--surface); flex-wrap: wrap; }
+  header h1 { font-size: 16px; margin: 0 6px 0 0; }
+  .tab { border: 0; background: none; padding: 6px 14px; border-radius: 8px; cursor: pointer; }
+  .tab.active { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+  .chip { font-size: 12px; padding: 3px 10px; border: 1px solid var(--border); border-radius: 999px; color: var(--muted); }
+  .chip.bad { color: var(--red); border-color: var(--red); }
+  .bar { display: flex; align-items: center; gap: 8px; padding: 6px 16px; font-size: 13px; white-space: pre-wrap; flex-wrap: wrap; }
+  .bar.warn { background: var(--warn-soft); color: var(--warn); }
+  .bar.bad { background: var(--red-soft); color: var(--red); }
+  .bar.ok { background: var(--green-soft); color: var(--green); }
+  .bar.plain { background: var(--surface-2); }
+  main { flex: 1; min-height: 0; padding: 12px 16px; }
+
+  /* 寫 prompt：左邊 prompt、右邊試跑 */
+  #view-write { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .panel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+  .panel-head { display: flex; align-items: center; gap: 6px; padding: 8px 12px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+  .panel-body { flex: 1; min-height: 0; overflow: auto; padding: 10px 12px; }
+  .panel-foot { padding: 8px 12px; border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: 6px; }
+  .ver { border: 1px solid var(--border); background: var(--surface); border-radius: 999px; padding: 1px 12px; cursor: pointer; font-family: var(--mono); font-size: 13px; }
+  .ver.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .ver.part { border-style: dashed; }
+  textarea.editor { flex: 1; border: 0; border-radius: 0; resize: none; padding: 10px 12px; font: 13px/1.6 var(--mono); outline: none; tab-size: 2; }
+  .note { font-size: 12px; padding: 4px 8px; border-radius: 6px; }
+  .note.warn { background: var(--warn-soft); color: var(--warn); }
+  .note.bad { background: var(--red-soft); color: var(--red); white-space: pre-wrap; }
+  .note.ok { background: var(--green-soft); color: var(--green); }
+  .saved { font-size: 12px; color: var(--muted); }
+  .saved.bad { color: var(--red); }
+
+  .box { border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; margin-bottom: 12px; }
+  .box-head { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 4px; }
+  .box-head strong { margin-right: 2px; }
+  .field { margin: 6px 0; }
+  .field > .fname { font-size: 12px; color: var(--muted); margin-bottom: 2px; display: flex; gap: 6px; align-items: center; }
+  .field > .fname code { color: var(--text); font-family: var(--mono); }
+  .field .item { display: flex; gap: 6px; align-items: flex-start; margin: 4px 0; padding-left: 8px; border-left: 2px solid var(--border); }
+  .field .item > .body { flex: 1; min-width: 0; }
+  .field .obj { padding-left: 8px; border-left: 2px solid var(--border); }
+  .field .inline { display: flex; gap: 8px; flex-wrap: wrap; }
+  .field .inline .field { flex: 1; min-width: 120px; margin: 0; }
+
+  .msg { max-width: 85%; padding: 8px 12px; border-radius: 10px; margin-bottom: 10px; white-space: pre-wrap; }
+  .msg.user { margin-left: auto; background: var(--user); }
+  .msg.bot { background: var(--surface-2); }
+  .msg .who { font-size: 12px; color: var(--muted); }
+  .msg.error { background: var(--red-soft); color: var(--red); }
+  .composer { display: flex; gap: 8px; padding: 10px 12px; border-top: 1px solid var(--border); }
+  .composer textarea { min-height: 52px; }
+  .answer { white-space: pre-wrap; background: var(--surface-2); border-radius: 8px; padding: 10px 12px; }
+  details > summary { cursor: pointer; color: var(--muted); font-size: 13px; }
+  .label { font-size: 12px; color: var(--muted); margin: 8px 0 2px; }
+
+  /* 比較版本：由上往下四步 */
+  #view-compare { overflow: auto; }
+  .steps { max-width: 1000px; margin: 0 auto; display: flex; flex-direction: column; gap: 14px; padding-bottom: 40px; }
+  .step { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 16px; }
+  .step > h2 { font-size: 15px; margin: 0 0 8px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .step > h2 .n { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--accent); color: #fff; font-size: 13px; }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 6px 0; }
+  .caserow { display: flex; gap: 8px; align-items: center; padding: 3px 8px; border: 1px solid var(--border); border-radius: 8px; margin-bottom: 5px; }
+  .caserow:hover { background: var(--surface-2); }
+  .caselink { flex: 1; min-width: 0; text-align: left; background: none; border: 0; cursor: pointer; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; padding: 2px 0; }
+  .case { border: 1px solid var(--accent); border-radius: 8px; padding: 8px 12px; margin-bottom: 8px; }
+  .crit { display: flex; gap: 6px; align-items: flex-start; margin: 4px 0; }
+  .crit textarea { flex: 1; min-height: 34px; }
+  .more { font-size: 12px; }
+  pre.log { max-height: 320px; overflow: auto; font-size: 12px; line-height: 1.5; margin-top: 8px; }
+  .result { border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; margin: 8px 0; }
+  .pass { color: var(--green); font-weight: 600; }
+  .fail { color: var(--red); font-weight: 600; }
+  .history { display: flex; gap: 6px; flex-wrap: wrap; }
+</style>
+</head>
+<body>
+<header>
+  <h1>llm-framework</h1>
+  <select id="task" title="任務"></select>
+  <button class="icon" id="task-del" title="刪除這個任務" hidden>🗑</button>
+  <button class="tab active" data-view="write">寫 prompt</button>
+  <button class="tab" data-view="compare">比較版本</button>
+  <span class="chip" id="eval-chip" hidden></span>
+  <span class="spacer"></span>
+  <span class="chip" id="model"></span>
+</header>
+<div class="bar" id="notice" hidden></div>
+<div class="bar warn" id="ask" hidden><span id="ask-text"></span><span class="spacer"></span>
+  <button class="btn danger" id="ask-ok"></button><button class="btn" id="ask-cancel">取消</button></div>
+<div class="bar plain" id="new-task" hidden>
+  新任務的名稱 <input type="text" id="new-name" placeholder="例：argument-summary" size="24">
+  <label><input type="radio" name="new-kind" value="oneshot" checked> 單次（問一次、回一次）</label>
+  <label><input type="radio" name="new-kind" value="dialogue"> 對話（來回好幾輪）</label>
+  <button class="btn primary" id="new-ok">建立</button><button class="btn" id="new-cancel">取消</button>
+  <span class="hint" id="new-err"></span>
+</div>
+
+<!-- ───────── 寫 prompt：左邊改 prompt，右邊試跑 ───────── -->
+<main id="view-write">
+  <section class="panel">
+    <div class="panel-head" id="versions"></div>
+    <textarea class="editor" id="editor" spellcheck="false"></textarea>
+    <div class="panel-foot" id="editor-foot"></div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head">
+      <strong>試跑</strong><span class="hint" id="try-version"></span>
+      <span class="spacer"></span>
+      <select id="runs" title="過去的試跑"></select>
+      <a class="btn small" id="run-download" hidden>下載</a>
+      <button class="btn small" id="try-new">重新開始</button>
+    </div>
+    <div class="panel-body" id="try-body">
+      <div class="box" id="input-box"></div>
+      <div id="try-out"></div>
+      <details id="sent"><summary>送給 AI 的內容</summary><div id="sent-body"></div></details>
+    </div>
+    <div class="composer" id="composer" hidden>
+      <textarea id="say" placeholder="打你要說的話，Enter 送出（Shift+Enter 換行）"></textarea>
+      <button class="btn primary" id="say-send">送出</button>
+    </div>
+  </section>
+</main>
+
+<!-- ───────── 比較版本：準備題目 → 要檢查什麼 → 跑 → 看結果 ───────── -->
+<main id="view-compare" hidden>
+  <div class="steps">
+    <section class="step" id="step-cases"></section>
+    <section class="step" id="step-criteria"></section>
+    <section class="step" id="step-run"></section>
+    <section class="step" id="step-results"></section>
+  </div>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+const pretty = v => JSON.stringify(v, null, 2);
+const clone = v => JSON.parse(JSON.stringify(v));
+const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+const q = encodeURIComponent;
+const TASK_NAME = /^[a-z][a-z0-9-]*$/;
+const NAME = /^[a-z0-9-]+$/;
+const INPUT_NAME = /^[\p{L}\p{N}_-]+$/u;
+
+async function api(method, path, body) {
+  const res = await fetch(path, { method, headers: { "Content-Type": "application/json" }, body: body && JSON.stringify(body) });
+  const data = await res.json();
+  if (!res.ok || data.error) throw new Error(data.error ?? `HTTP ${res.status}`);
+  return data;
+}
+
+// ───────── 頁面上方的提示和確認 ─────────
+let noticeTimer = 0;
+function notify(text, kind = "warn", ms = 0) {
+  clearTimeout(noticeTimer);
+  $("notice").hidden = !text;
+  $("notice").className = `bar ${kind}`;
+  $("notice").textContent = text || "";
+  if (text && ms) noticeTimer = setTimeout(() => notify(""), ms);
+}
+function ask(text, okLabel) {
+  return new Promise(resolve => {
+    $("ask-text").textContent = text;
+    $("ask-ok").textContent = okLabel;
+    $("ask").hidden = false;
+    const done = v => { $("ask").hidden = true; $("ask-ok").onclick = $("ask-cancel").onclick = null; resolve(v); };
+    $("ask-ok").onclick = () => done(true);
+    $("ask-cancel").onclick = () => done(false);
+  });
+}
+
+// ───────── 任務 ─────────
+const S = { boot: null, tasks: [], task: null, pendingTask: null };
+const current = () => S.tasks.find(t => t.name === S.task);
+const fileUrl = file => `/api/file?task=${q(S.task)}&file=${q(file)}`;
+
+async function loadState() {
+  const s = await api("GET", "/api/state");
+  S.boot = s.boot; S.tasks = s.tasks;
+  $("model").textContent = s.keys.length ? `模型：${s.model}` : "沒有 key：在 .env 設定 GLM_API_KEY";
+  $("model").classList.toggle("bad", !s.keys.length);
+  const group = (g, label) => {
+    const items = S.tasks.filter(t => t.group === g);
+    return items.length ? `<optgroup label="${label}">${items.map(t => `<option value="${esc(t.name)}">${esc(t.name)}</option>`).join("")}</optgroup>` : "";
+  };
+  $("task").innerHTML = group("tasks", "你的任務") + group("examples", "範例") + `<option value="__new">＋ 新增任務…</option>`;
+  const want = [S.pendingTask, S.task].find(n => n && S.tasks.some(t => t.name === n)) ?? S.tasks[0]?.name;
+  S.pendingTask = null;
+  $("task").value = want;
+  if (want !== S.task) await selectTask(want);
+}
+
+async function selectTask(name) {
+  await flushSaves();
+  S.task = name;
+  const t = current();
+  $("task-del").hidden = t.group !== "tasks";
+  Object.assign(W, { file: "main.prompt", saved: {}, text: null, inputSource: "", input: clone(t.example), runId: null, record: null });
+  Object.assign(E, { plan: null, draft: null, open: null, evalId: null, typed: { open: false, text: "", input: null } });
+  await openFile("main.prompt");
+  renderInput(); newTry();
+  if (!$("view-compare").hidden) openCompare();
+}
+
+$("task").onchange = () => {
+  if ($("task").value === "__new") { $("task").value = S.task; $("new-task").hidden = false; $("new-err").textContent = ""; $("new-name").focus(); return; }
+  selectTask($("task").value);
+};
+$("new-cancel").onclick = () => { $("new-task").hidden = true; };
+$("new-name").onkeydown = e => { if (e.key === "Enter") $("new-ok").click(); if (e.key === "Escape") $("new-cancel").click(); };
+$("new-ok").onclick = async () => {
+  const name = $("new-name").value.trim();
+  if (!TASK_NAME.test(name)) { $("new-err").textContent = "名稱只能用小寫英文、數字、減號，英文字母開頭"; return; }
+  try {
+    await api("POST", "/api/task", { name, kind: document.querySelector("[name=new-kind]:checked").value });
+    $("new-task").hidden = true; $("new-name").value = "";
+    S.pendingTask = name;
+    notify(`建好了：tasks/${name}/。載入中…`, "ok");
+  } catch (e) { $("new-err").textContent = e.message; }
+};
+$("task-del").onclick = async () => {
+  if (!(await ask(`刪除任務 ${S.task}？整個 tasks/${S.task}/ 資料夾都會刪掉。`, "刪除"))) return;
+  try { await api("DELETE", "/api/task", { name: S.task }); notify(`刪掉了 ${S.task}。載入中…`, "ok"); }
+  catch (e) { notify(e.message, "bad"); }
+};
+
+// ───────── 分頁 ─────────
+document.querySelectorAll(".tab").forEach(b => b.onclick = async () => {
+  await flushSaves();
+  document.querySelectorAll(".tab").forEach(x => x.classList.toggle("active", x === b));
+  $("view-write").hidden = b.dataset.view !== "write";
+  $("view-compare").hidden = b.dataset.view !== "compare";
+  if (b.dataset.view === "compare") openCompare(); else { renderInput(); preview(); }
+});
+
+// ───────── 寫 prompt：版本、片段、自動存檔 ─────────
+/** file：正在改的檔案；saved：磁碟上的內容；inputSource：題目來自哪裡（"" = 範例） */
+const W = { file: "main.prompt", saved: {}, text: null, saveTimer: 0, saving: null, adding: false, inputSource: "", input: null, inputTimer: 0, runId: null, record: null, previewTimer: 0 };
+const variantOf = f => { const m = f.match(/^main(?:\.([^.]+))?\.prompt$/); return m ? (m[1] ?? "main") : null; };
+const fileOfVariant = v => (v === "main" ? "main.prompt" : `main.${v}.prompt`);
+const byMainFirst = list => [...list].sort((a, b) => (a === "main" ? -1 : b === "main" ? 1 : a.localeCompare(b)));
+/** 試跑用的版本：正在改的那個；在改片段時，就是剛剛的版本 */
+let tryVariant = "main";
+
+async function openFile(file) {
+  await flushSaves();
+  if (W.saved[file] === undefined) W.saved[file] = (await api("GET", fileUrl(file))).content;
+  W.file = file;
+  W.text = W.saved[file];
+  $("editor").value = W.text;
+  const v = variantOf(file);
+  if (v && v !== tryVariant) { tryVariant = v; newTry(); }
+  renderVersions(); renderFoot(); preview();
+}
+
+function renderVersions() {
+  const t = current();
+  const v = variantOf(W.file);
+  let html = byMainFirst(t.variants).map(name => `<button class="ver ${name === v ? "active" : ""}" data-ver="${esc(name)}">${esc(name)}</button>`).join("");
+  html += W.adding
+    ? `<input type="text" id="ver-name" placeholder="新版本的名稱，例：strict" size="20"><span class="hint" id="ver-err"></span>`
+    : `<button class="icon" id="ver-add" title="複製目前的版本，改成另一個版本">＋ 新版本</button>`;
+  if (!v) html += `<span class="ver part active">${esc(W.file.replace(/^shared\//, ""))}</span>`;
+  html += `<span class="spacer"></span><span class="saved" id="saved"></span>`;
+  if (v && v !== "main") html += `<button class="icon" id="ver-del" title="刪除這個版本">🗑</button>`;
+  $("versions").innerHTML = html;
+  $("versions").querySelectorAll("[data-ver]").forEach(b => b.onclick = () => openFile(fileOfVariant(b.dataset.ver)));
+  $("ver-add")?.addEventListener("click", () => { W.adding = true; renderVersions(); $("ver-name").focus(); });
+  $("ver-del")?.addEventListener("click", deleteVersion);
+  const box = $("ver-name");
+  if (box) {
+    box.onkeydown = e => {
+      if (e.key === "Escape") { W.adding = false; renderVersions(); }
+      if (e.key === "Enter") addVersion(box.value.trim());
+    };
+    box.onblur = () => setTimeout(() => { if (W.adding && document.activeElement !== $("ver-name")) { W.adding = false; renderVersions(); } }, 150);
+  }
+  showSaved();
+}
+
+async function addVersion(name) {
+  if (!NAME.test(name)) { $("ver-err").textContent = "只能用小寫英文、數字、減號"; return; }
+  const file = fileOfVariant(name);
+  try {
+    await flushSaves();
+    const content = variantOf(W.file) ? W.text : W.saved[fileOfVariant(tryVariant)] ?? "";
+    const data = await api("PUT", "/api/file", { task: S.task, file, content, create: true });
+    Object.assign(current(), data.task);
+    W.saved[file] = content; W.adding = false;
+    await openFile(file);
+  } catch (e) { $("ver-err").textContent = e.message; }
+}
+
+async function deleteVersion() {
+  const v = variantOf(W.file);
+  if (!(await ask(`刪除版本 ${v}（prompts/${W.file}）？`, "刪除"))) return;
+  try {
+    const data = await api("DELETE", "/api/file", { task: S.task, file: W.file });
+    Object.assign(current(), data.task);
+    delete W.saved[W.file];
+    W.text = null; // 刪掉了，不要在切走前又存回去
+    await openFile("main.prompt");
+  } catch (e) { notify(e.message, "bad"); }
+}
+
+/** prompt 裡用到的片段 {{> 名稱}}：任務自己的 _名稱.prompt，沒有就找共用的 */
+function partialsIn(text) {
+  const t = current();
+  const names = [...new Set([...(text ?? "").matchAll(/\{\{>\s*([\w-]+)/g)].map(m => m[1]))];
+  return names.map(n => {
+    const own = `_${n}.prompt`, shared = `shared/_${n}.prompt`;
+    if (t.files.partials.includes(own)) return { name: n, file: own };
+    if (t.files.shared.includes(shared)) return { name: n, file: shared, shared: true };
+    return { name: n, file: own, missing: true };
+  });
+}
+
+function renderFoot(unknown = [], error = "") {
+  const back = variantOf(W.file) ? "" : `<button class="ver" data-back>← 回到 ${esc(tryVariant)}</button> `;
+  const parts = partialsIn(W.file.startsWith("main") ? W.text : W.saved[fileOfVariant(tryVariant)]);
+  const chips = parts.map(p => `<button class="ver part ${p.file === W.file ? "active" : ""}" data-part="${esc(p.file)}" ${p.missing ? "data-missing" : ""}>${esc(p.name)}${p.shared ? "（共用）" : ""}${p.missing ? "（還沒有，點了建立）" : ""}</button>`).join(" ");
+  const shared = W.file.startsWith("shared/") ? `<div class="note warn">這是共用片段，所有任務都會用到它。</div>` : "";
+  const warn = error ? `<div class="note bad">${esc(error)}</div>`
+    : unknown.length ? `<div class="note warn">⚠ 題目裡沒有 ${unknown.map(u => `<code>{{${esc(u.name)}}}</code>`).join("、")}，送出去會是空的（名稱打錯了？）</div>` : "";
+  $("editor-foot").innerHTML = shared + warn + (parts.length || back ? `<div>${back}${parts.length ? `<span class="hint">用到的片段：</span>${chips}` : ""}</div>` : "");
+  $("editor-foot").hidden = !$("editor-foot").innerHTML;
+  $("editor-foot").querySelector("[data-back]")?.addEventListener("click", () => openFile(fileOfVariant(tryVariant)));
+  $("editor-foot").querySelectorAll("[data-part]").forEach(b => b.onclick = async () => {
+    const file = b.dataset.part;
+    if (b.dataset.missing !== undefined) {
+      try { Object.assign(current(), (await api("PUT", "/api/file", { task: S.task, file, content: "", create: true })).task); W.saved[file] = ""; }
+      catch (e) { notify(e.message, "bad"); return; }
+    }
+    openFile(file);
+  });
+}
+
+// 打字就自動存檔（停 0.6 秒後存）
+$("editor").oninput = () => {
+  W.text = $("editor").value;
+  clearTimeout(W.saveTimer);
+  W.saveTimer = setTimeout(saveFile, 600);
+  showSaved("…");
+  schedulePreview();
+};
+$("editor").onkeydown = e => {
+  if (e.key === "Tab") { e.preventDefault(); document.execCommand("insertText", false, "  "); }
+  if ((e.ctrlKey || e.metaKey) && e.key === "s") { e.preventDefault(); saveFile(); }
+};
+
+function showSaved(state) {
+  const el = $("saved");
+  if (!el) return;
+  el.className = `saved ${state?.startsWith?.("沒存") ? "bad" : ""}`;
+  el.textContent = state ?? (W.text === W.saved[W.file] ? "已存" : "…");
+}
+
+async function saveFile() {
+  clearTimeout(W.saveTimer);
+  const file = W.file, content = W.text;
+  if (content === W.saved[file]) return;
+  W.saving = (async () => {
+    try {
+      const data = await api("PUT", "/api/file", { task: S.task, file, content });
+      W.saved[file] = content;
+      Object.assign(current(), data.task);
+      if (file === W.file) showSaved();
+    } catch (e) { showSaved(`沒存：${e.message}`); }
+  })();
+  await W.saving; W.saving = null;
+}
+
+/** 換檔案、換任務、換分頁前：把還沒存的先存好 */
+async function flushSaves() {
+  if (W.text !== null && W.text !== W.saved[W.file]) await saveFile();
+  if (W.saving) await W.saving;
+  if (W.inputTimer) await saveInput();
+  if (E.saveTimer) await savePlan();
+}
+
+// ───────── 送給 AI 的內容（不呼叫模型）；欄位名稱打錯在左下角提醒 ─────────
+function schedulePreview() { clearTimeout(W.previewTimer); W.previewTimer = setTimeout(preview, 250); }
+
+async function preview() {
+  if (!S.task || W.text === null) return;
+  const edits = { [W.file]: W.text };
+  try {
+    const r = await api("POST", "/api/render", { task: S.task, variant: tryVariant, edits, input: W.input });
+    if (r.inputErrors) { renderFoot([], `題目不符合 task.ts 的格式：\n- ${r.inputErrors.join("\n- ")}`); $("sent-body").innerHTML = ""; return; }
+    renderFoot(r.unknown);
+    $("sent-body").innerHTML = `<p class="label">system</p><pre>${esc(r.system)}</pre>` + (r.user ? `<p class="label">user</p><pre>${esc(r.user)}</pre>` : "");
+  } catch (e) { renderFoot([], e.message); }
+}
+
+// ───────── 題目：依 task.ts 的 input 產生的表單 ─────────
+function defaultFor(s) {
+  if (s.enum) return s.enum[0];
+  if (s.type === "string") return "";
+  if (s.type === "integer" || s.type === "number") return 0;
+  if (s.type === "boolean") return false;
+  if (s.type === "array") return [];
+  if (s.type === "object") return Object.fromEntries((s.required ?? []).map(k => [k, defaultFor(s.properties[k])]));
+  return null;
+}
+
+/** 依格式產生欄位。path 是值的位置 */
+function fieldHtml(s, value, path) {
+  const p = esc(JSON.stringify(path));
+  if (s.enum) return `<select data-path="${p}" data-kind="enum">${s.enum.map(v => `<option ${v === value ? "selected" : ""}>${esc(v)}</option>`).join("")}</select>`;
+  if (s.type === "string") return `<textarea data-path="${p}" data-kind="string" rows="${String(value ?? "").length > 60 ? 3 : 1}">${esc(value)}</textarea>`;
+  if (s.type === "integer" || s.type === "number") return `<input type="number" data-path="${p}" data-kind="number" value="${esc(value ?? 0)}">`;
+  if (s.type === "boolean") return `<input type="checkbox" data-path="${p}" data-kind="boolean" ${value ? "checked" : ""}>`;
+  if (s.type === "array") {
+    const items = (value ?? []).map((v, i) =>
+      `<div class="item"><div class="body">${fieldHtml(s.items, v, [...path, i])}</div><button class="icon" data-remove="${esc(JSON.stringify([...path, i]))}" title="刪除這一列">🗑</button></div>`).join("");
+    return `${items}<button class="btn small" data-append="${p}">＋ 一列</button>`;
+  }
+  if (s.type === "object") {
+    const props = Object.entries(s.properties ?? {});
+    const simple = props.every(([, ps]) => ps.type === "string" && !ps.enum && props.length <= 3);
+    const inner = props.map(([k, ps]) => {
+      const optional = !(s.required ?? []).includes(k);
+      const has = value && k in value;
+      const head = `<div class="fname">${esc(ps.description || k)}${optional ? `<span class="hint">（可不填）</span>` : ""}`
+        + (optional && has ? `<button class="icon" data-unset="${esc(JSON.stringify([...path, k]))}" title="不填">🗑</button>` : "") + `</div>`;
+      const body = has ? fieldHtml(ps, value[k], [...path, k]) : `<button class="btn small" data-set="${esc(JSON.stringify([...path, k]))}">＋ 填這個</button>`;
+      return `<div class="field">${head}${body}</div>`;
+    }).join("");
+    return path.length ? `<div class="${simple ? "inline" : "obj"}">${inner}</div>` : inner;
+  }
+  return `<textarea data-path="${p}" data-kind="json" rows="3">${esc(pretty(value))}</textarea>`;
+}
+
+const schemaAt = path => path.reduce((s, k) => (typeof k === "number" ? s.items : s.properties[k]), current().inputSchema);
+const getIn = (root, path) => path.reduce((v, k) => v?.[k], root);
+function setIn(root, path, val) {
+  const parent = getIn(root, path.slice(0, -1));
+  const k = path[path.length - 1];
+  if (val === undefined) { if (Array.isArray(parent)) parent.splice(k, 1); else delete parent[k]; } else parent[k] = val;
+}
+
+/** 接上 fieldHtml 的欄位。root()：資料；edited：打字後；redraw：加、刪欄位後重畫 */
+function wireFields(box, root, edited, redraw) {
+  box.querySelectorAll("[data-path]").forEach(el => {
+    const path = JSON.parse(el.dataset.path);
+    el.oninput = el.onchange = () => {
+      const k = el.dataset.kind;
+      let v = k === "boolean" ? el.checked : el.value;
+      if (k === "number") v = Number(el.value);
+      if (k === "json") { try { v = JSON.parse(el.value); el.style.borderColor = ""; } catch { el.style.borderColor = "var(--red)"; return; } }
+      setIn(root(), path, v);
+      edited();
+    };
+  });
+  box.querySelectorAll("[data-append]").forEach(el => el.onclick = () => {
+    const path = JSON.parse(el.dataset.append);
+    getIn(root(), path).push(defaultFor(schemaAt(path).items));
+    redraw();
+  });
+  box.querySelectorAll("[data-remove], [data-unset]").forEach(el => el.onclick = () => { setIn(root(), JSON.parse(el.dataset.remove ?? el.dataset.unset), undefined); redraw(); });
+  box.querySelectorAll("[data-set]").forEach(el => el.onclick = () => {
+    const path = JSON.parse(el.dataset.set);
+    setIn(root(), path, defaultFor(schemaAt(path)));
+    redraw();
+  });
+}
+
+const inputName = f => f.replace(/^inputs\//, "").replace(/\.json$/, "");
+
+/** 題目：範例（task.ts）或存好的題目（inputs/）。存好的題目改了自動存回去 */
+function renderInput() {
+  const t = current();
+  if (!t) return;
+  const locked = Boolean(W.runId); // 已經開始的試跑：題目固定
+  const box = $("input-box");
+  if (locked) {
+    box.innerHTML = `<div class="box-head"><strong>題目</strong><span class="hint">這次試跑用的；要換題目，按「重新開始」</span></div><pre>${esc(pretty(W.record?.input ?? W.input))}</pre>`;
+    return;
+  }
+  const options = [["", "範例"], ...t.files.inputs.map(f => [f, inputName(f)])];
+  box.innerHTML = `<div class="box-head"><strong>題目</strong>
+      <select id="input-src">${options.map(([v, l]) => `<option value="${esc(v)}" ${v === W.inputSource ? "selected" : ""}>${esc(l)}</option>`).join("")}</select>
+      <span class="spacer"></span>
+      <span id="input-saveas"><button class="btn small" id="input-new">存成新題目</button></span>
+      ${W.inputSource ? `<button class="icon" id="input-del" title="刪除這個題目">🗑</button>` : ""}
+    </div>
+    <div id="input-fields">${fieldHtml(t.inputSchema, W.input, [])}</div>`;
+  wireFields($("input-fields"), () => W.input, inputEdited, () => { renderInput(); inputEdited(); });
+  $("input-src").onchange = e => loadInput(e.target.value);
+  $("input-new").onclick = () => {
+    $("input-saveas").innerHTML = `<input type="text" id="input-name" placeholder="名稱，例：器官移植" size="16"> <button class="btn small primary" id="input-ok">存</button>`;
+    $("input-name").focus();
+    const go = () => saveInputAs($("input-name").value.trim());
+    $("input-ok").onclick = go;
+    $("input-name").onkeydown = e => { if (e.key === "Enter") go(); if (e.key === "Escape") renderInput(); };
+  };
+  $("input-del")?.addEventListener("click", async () => {
+    if (!(await ask(`刪除題目「${inputName(W.inputSource)}」？`, "刪除"))) return;
+    try {
+      Object.assign(current(), (await api("DELETE", "/api/file", { task: S.task, file: W.inputSource })).task);
+      await loadInput("");
+    } catch (e) { notify(e.message, "bad"); }
+  });
+}
+
+function inputEdited() {
+  schedulePreview();
+  if (!W.inputSource) return; // 範例：只在這裡試，不存
+  clearTimeout(W.inputTimer);
+  W.inputTimer = setTimeout(saveInput, 600);
+}
+
+async function saveInput() {
+  clearTimeout(W.inputTimer); W.inputTimer = 0;
+  if (!W.inputSource) return;
+  const content = pretty(W.input) + "\n";
+  try { await api("PUT", "/api/file", { task: S.task, file: W.inputSource, content }); W.saved[W.inputSource] = content; }
+  catch (e) { notify(`題目沒存：${e.message}`, "bad"); }
+}
+
+async function loadInput(source) {
+  await flushSaves();
+  try {
+    if (!source) W.input = clone(current().example);
+    else {
+      W.saved[source] = (await api("GET", fileUrl(source))).content;
+      W.input = JSON.parse(W.saved[source]);
+    }
+    W.inputSource = source;
+  } catch (e) { notify(`${source} 讀不出來：${e.message}`, "bad"); W.inputSource = ""; W.input = clone(current().example); }
+  renderInput(); preview();
+}
+
+async function saveInputAs(name) {
+  if (!INPUT_NAME.test(name)) { notify("題目名稱只能用文字、數字、底線、減號"); return; }
+  const file = `inputs/${name}.json`;
+  try {
+    const data = await api("PUT", "/api/file", { task: S.task, file, content: pretty(W.input) + "\n", create: true });
+    Object.assign(current(), data.task);
+    W.inputSource = file;
+    renderInput();
+    notify(`存好了：${name}`, "ok", 2000);
+  } catch (e) { notify(e.message, "bad"); }
+}
+
+// ───────── 試跑：每次都存成紀錄（.runs/），可以從「過去的試跑」打開、接著聊、下載 ─────────
+const dialogue = () => current()?.kind === "dialogue";
+const runTime = s => { const d = new Date(s); return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`; };
+
+async function loadRuns() {
+  const runs = await api("GET", `/api/runs?task=${q(S.task)}`).catch(() => []);
+  $("runs").innerHTML = `<option value="">過去的試跑（${runs.length}）</option>`
+    + runs.map(r => `<option value="${esc(r.id)}" ${r.id === W.runId ? "selected" : ""}>${runTime(r.createdAt)}　${esc(r.variant)}${r.kind === "dialogue" ? `　${r.rounds} 輪` : ""}　${esc(String(r.first ?? "").slice(0, 20))}</option>`).join("");
+}
+$("runs").onchange = () => { if ($("runs").value) openRun($("runs").value); };
+
+function setDownload() {
+  $("run-download").hidden = !W.runId;
+  if (W.runId) { $("run-download").href = `/api/run?task=${q(S.task)}&id=${q(W.runId)}&format=md`; $("run-download").download = ""; }
+}
+
+/** 新的試跑：題目可以改；對話型清空對話 */
+function newTry() {
+  W.runId = null; W.record = null;
+  $("try-version").textContent = `版本 ${tryVariant}`;
+  $("try-new").hidden = true;
+  $("composer").hidden = !dialogue();
+  if (dialogue()) {
+    $("try-out").innerHTML = current().opener === "ai"
+      ? `<div id="chat"></div><button class="btn primary" id="chat-start">開始（AI 先說）</button>`
+      : `<div id="chat"></div>`;
+    $("chat-start")?.addEventListener("click", () => openChat());
+  } else {
+    $("try-out").innerHTML = `<button class="btn primary" id="run-once">試跑</button><div id="answer"></div>`;
+    $("run-once").onclick = runOnce;
+  }
+  setDownload(); renderInput(); loadRuns();
+}
+$("try-new").onclick = newTry;
+
+/** 等 AI 時顯示秒數 */
+function waiting(el) {
+  const t0 = performance.now();
+  const tick = () => { el.textContent = `AI 回覆中… ${((performance.now() - t0) / 1000).toFixed(1)} 秒`; };
+  tick();
+  const timer = setInterval(tick, 100);
+  return () => { clearInterval(timer); el.remove(); };
+}
+
+function started(record) {
+  W.runId = record.id; W.record = record;
+  $("try-new").hidden = false;
+  setDownload(); renderInput(); loadRuns();
+}
+
+async function runOnce() {
+  $("run-once").disabled = true;
+  $("answer").innerHTML = `<p class="hint" id="wait"></p>`;
+  const stop = waiting($("wait"));
+  try {
+    const r = await api("POST", "/api/run", { task: S.task, variant: tryVariant, input: W.input });
+    stop();
+    showAnswer(r);
+    started(r);
+  } catch (e) {
+    stop();
+    $("answer").innerHTML = `<div class="msg error">${esc(e.message)}</div>`;
+    $("run-once").disabled = false;
+  }
+}
+
+function showAnswer(r) {
+  $("run-once").hidden = true;
+  if (r.error) { $("answer").innerHTML = `<div class="msg error">（${r.seconds} 秒）${esc(r.error)}</div>`; return; }
+  const body = typeof r.output === "string" ? `<div class="answer">${esc(r.output)}</div>` : `<pre>${esc(pretty(r.output))}</pre>`;
+  const retries = r.stats?.retries ? `；格式不對、重問了 ${r.stats.retries} 次` : "";
+  $("answer").innerHTML = `<p class="label">AI 的回覆（${r.seconds} 秒${retries}）</p>${body}`;
+}
+
+function addMsg(who, text, cls, meta = "") {
+  $("chat").insertAdjacentHTML("beforeend", `<div class="msg ${cls}"><div class="who">${who}${meta ? `　${meta}` : ""}</div>${esc(text)}</div>`);
+  $("try-body").scrollTop = $("try-body").scrollHeight;
+}
+
+function addProgress(progress) {
+  $("chat").querySelector("details.progress")?.remove();
+  if (progress === undefined) return;
+  $("chat").insertAdjacentHTML("beforeend", `<details class="progress"><summary>進度（task.ts 的 progress）</summary><pre>${esc(pretty(progress))}</pre></details>`);
+}
+
+/** 失敗的那一輪：顯示錯誤和「重試」（同一句話再送一次） */
+function addError(message, text) {
+  $("chat").insertAdjacentHTML("beforeend", `<div class="msg error">${esc(message)}<br><button class="btn small" data-retry>重試</button></div>`);
+  const b = $("chat").querySelector("[data-retry]:last-of-type");
+  b.onclick = () => { b.closest(".msg").remove(); text === null ? openChat() : say(text, true); };
+}
+
+async function openChat() {
+  $("chat-start")?.remove();
+  const ai = current().opener === "ai";
+  let stop = () => {};
+  if (ai) { $("chat").insertAdjacentHTML("beforeend", `<div class="msg bot" id="wait"></div>`); stop = waiting($("wait")); }
+  $("say-send").disabled = true;
+  try {
+    const rec = await api("POST", "/api/chat/open", { task: S.task, variant: tryVariant, input: W.input });
+    stop();
+    const first = rec.turns?.[0];
+    if (first?.user === null) { addMsg("AI", first.reply, "bot", `${first.seconds} 秒`); addProgress(first.progress); }
+    started(rec);
+    return true;
+  } catch (e) {
+    stop();
+    addError(e.message, null);
+    return false;
+  } finally { $("say-send").disabled = false; $("say").focus(); }
+}
+
+async function say(text, again = false) {
+  if (!text) return;
+  if (!W.runId && !(await openChat())) return;
+  $("say-send").disabled = true;
+  if (!again) addMsg("你", text, "user");
+  $("chat").insertAdjacentHTML("beforeend", `<div class="msg bot" id="wait"></div>`);
+  const stop = waiting($("wait"));
+  try {
+    const r = await api("POST", "/api/chat/say", { task: S.task, id: W.runId, text });
+    stop();
+    addMsg("AI", r.reply, "bot", `${r.seconds} 秒`);
+    addProgress(r.progress);
+  } catch (e) {
+    stop();
+    addError(e.message, text);
+  } finally { $("say-send").disabled = false; $("say").focus(); loadRuns(); }
+}
+$("say-send").onclick = () => { const text = $("say").value.trim(); $("say").value = ""; say(text); };
+$("say").onkeydown = e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); $("say-send").click(); } };
+
+async function openRun(id) {
+  try {
+    const r = await api("GET", `/api/run?task=${q(S.task)}&id=${q(id)}`);
+    if (r.variant !== tryVariant && current().variants.includes(r.variant)) { tryVariant = r.variant; await openFile(fileOfVariant(r.variant)); }
+    newTry();
+    if (r.kind === "dialogue") {
+      for (const t of r.turns ?? []) {
+        if (t.user !== null) addMsg("你", t.user, "user", `第 ${t.round} 輪`);
+        if (t.error) $("chat").insertAdjacentHTML("beforeend", `<div class="msg error">（${t.seconds} 秒）${esc(t.error)}</div>`);
+        else addMsg("AI", t.reply, "bot", `${t.seconds} 秒`);
+      }
+      $("chat-start")?.remove();
+      addProgress([...(r.turns ?? [])].reverse().find(t => t.progress)?.progress);
+    } else showAnswer(r);
+    started(r);
+  } catch (e) { notify(e.message, "bad"); }
+}
+
+// ───────── 比較版本 ─────────
+/**
+ * plan：伺服器上的評估內容；draft：網頁上的 evals.json（改了自動存）
+ * off / offVariants：這次不跑的題目（記物件）和版本；open：展開的那一筆
+ */
+const E = { plan: null, draft: null, saveTimer: 0, saveError: "", off: new WeakSet(), offVariants: new Set(), open: null,
+  typed: { open: false, text: "", input: null }, gen: { n: 3, hint: "", busy: false },
+  running: null, lastRun: null, t0: 0, timer: 0, evalId: null };
+const KINDS = {
+  yesno: { label: "有沒有做到", hint: "例：有沒有只問問題、沒有直接給答案？" },
+  score: { label: "打分數", hint: "寫出怎樣給高分、怎樣給低分（0–1 分，低於門檻算沒過）" },
+  best: { label: "選最好的", hint: "比較的重點：從這次跑的版本裡選一個最好的" },
+  check: { label: "用程式檢查", hint: "" },
+};
+const STATUS = { running: "進行中", done: "跑完了", failed: "失敗", stopped: "停掉了" };
+
+async function openCompare() {
+  const st = await api("GET", "/api/eval/status").catch(() => ({ running: false }));
+  if (st.running && E.running?.id !== st.meta.id) adoptRunning(st);
+  await loadPlan();
+  renderResults();
+}
+
+async function loadPlan() {
+  try { E.plan = await api("GET", `/api/eval/plan?task=${q(S.task)}`); }
+  catch (e) { $("step-cases").innerHTML = `<div class="note bad">${esc(e.message)}</div>`; return; }
+  if (!E.saveTimer) E.draft = clone(E.plan.evals);
+  renderPlan();
+}
+
+/** 改了就自動存（停 0.8 秒後）；內容還不合格（例如標準沒寫）就先不存，顯示原因 */
+function planEdited(redraw = false) {
+  clearTimeout(E.saveTimer);
+  E.saveTimer = setTimeout(savePlan, 800);
+  if (redraw) renderPlan(); else showPlanSaved("…");
+}
+
+async function savePlan() {
+  clearTimeout(E.saveTimer); E.saveTimer = 0;
+  if (!E.draft || same(E.draft, E.plan?.evals)) { showPlanSaved(); return true; }
+  try {
+    E.plan = await api("PUT", "/api/eval/plan", { task: S.task, evals: E.draft });
+    E.saveError = "";
+  } catch (e) { E.saveError = e.message; }
+  showPlanSaved();
+  return !E.saveError;
+}
+
+function showPlanSaved(state) {
+  const el = $("plan-saved");
+  if (!el) return;
+  el.className = `saved ${!state && E.saveError ? "bad" : ""}`;
+  el.textContent = state ?? (E.saveError ? `還沒存：${E.saveError.replace(/^評估內容有問題：\n?/, "")}` : "已存");
+}
+
+function renderPlan() {
+  if (!E.plan || !E.draft) return;
+  renderCases(); renderCriteria(); renderRun();
+}
+
+// ── ① 題目 ──
+function caseSummary(c) {
+  const text = Object.values(c.input ?? {}).find(v => typeof v === "string" && v.trim()) ?? JSON.stringify(c.input ?? {});
+  const parts = [String(text).replace(/\s+/g, " ").slice(0, 50)];
+  if (dialogue()) parts.push(c.script ? `對方照稿 ${c.script.length} 句` : `AI 扮演對方，${c.turns ?? "?"} 輪`);
+  if (c.criteria?.length) parts.push(`另外檢查 ${c.criteria.length} 條`);
+  return parts.join("　");
+}
+
+function caseHtml(c, i) {
+  const t = current();
+  const run = `<input type="checkbox" data-run="${i}" ${E.off.has(c) ? "" : "checked"} title="這次要不要跑這一筆">`;
+  if (E.open !== c) {
+    return `<div class="caserow">${run}<button class="caselink" data-open="${i}">▸ <strong>${esc(c.name || "（沒有名稱）")}</strong>　<span class="hint">${esc(caseSummary(c))}</span></button>
+      <button class="icon" data-del="${i}" title="刪除">🗑</button></div>`;
+  }
+  const other = !dialogue() ? "" : `
+    <div class="field"><div class="fname">對方怎麼說話
+      <select data-mode="${i}"><option value="partner" ${c.script ? "" : "selected"}>讓 AI 扮演</option><option value="script" ${c.script ? "selected" : ""}>照稿念</option></select></div>
+      ${c.script
+        ? `<textarea data-script="${i}" rows="${Math.max(3, c.script.length + 1)}" placeholder="一行一句，照順序說">${esc(c.script.join("\n"))}</textarea>`
+        : `<textarea data-f="${esc(JSON.stringify(["cases", i, "partner"]))}" rows="2" placeholder="他是誰、怎麼想、怎麼說話">${esc(c.partner)}</textarea>
+           <div class="row"><span class="hint">聊幾輪</span><input type="number" min="1" data-f="${esc(JSON.stringify(["cases", i, "turns"]))}" data-num value="${c.turns ?? ""}" style="width:70px"></div>`}
+    </div>`;
+  return `<div class="case">
+    <div class="row">${run}<button class="icon" data-open="${i}">▾</button>
+      <input type="text" data-f="${esc(JSON.stringify(["cases", i, "name"]))}" value="${esc(c.name)}" placeholder="名稱" style="flex:1">
+      <button class="icon" data-del="${i}" title="刪除">🗑</button></div>
+    <div class="field"><div class="fname">題目</div><div class="obj" data-input="${i}">${fieldHtml(t.inputSchema, c.input ?? {}, [])}</div></div>
+    ${other}
+    <div class="field"><div class="fname">這一筆另外要檢查的</div>${critList(c.criteria ?? [], ["cases", i, "criteria"])}</div>
+  </div>`;
+}
+
+/** 輸入只有一個必填的文字欄位：「自己打」一行就是一題 */
+function singleTextField(schema) {
+  const req = schema.required ?? [];
+  return req.length === 1 && schema.properties?.[req[0]]?.type === "string" && !schema.properties[req[0]].enum ? req[0] : null;
+}
+
+function renderCases() {
+  const d = E.draft, t = current();
+  const field = singleTextField(t.inputSchema);
+  if (dialogue()) E.typed.input ??= clone(t.example);
+  const placeholder = dialogue() ? "對方說的話，一行一句；空一行就是另一筆"
+    : field ? "一行一題" : `一行一題，寫成 JSON，例：${JSON.stringify(t.example)}`;
+  $("step-cases").innerHTML = `
+    <h2><span class="n">1</span>題目（${d.cases.length}）<span class="spacer"></span><span class="saved" id="plan-saved"></span></h2>
+    <div class="row">
+      <button class="btn" id="gen" ${E.gen.busy ? "disabled" : ""}>讓 AI 想</button>
+      <input type="number" id="gen-n" min="1" max="20" value="${E.gen.n}" style="width:56px"><span class="hint">個</span>
+      <input type="text" id="gen-hint" value="${esc(E.gen.hint)}" placeholder="想要什麼樣的（可不填）" style="flex:1;min-width:180px">
+      <button class="btn" id="typed-toggle">自己打</button>
+      <button class="btn" id="case-add">＋ 一筆</button>
+    </div>
+    <div id="gen-status" class="hint">${E.gen.busy ? "AI 想題目中…" : ""}</div>
+    <div class="box" ${E.typed.open ? "" : "hidden"}>
+      ${dialogue() ? `<div class="field"><div class="fname">這幾筆的題目</div><div class="obj" id="typed-input">${fieldHtml(t.inputSchema, E.typed.input, [])}</div></div>` : ""}
+      <textarea id="typed" rows="5" placeholder="${esc(placeholder)}">${esc(E.typed.text)}</textarea>
+      <div class="row"><button class="btn primary" id="typed-add">加進去</button><span class="hint" id="typed-msg"></span></div>
+    </div>
+    ${d.cases.map(caseHtml).join("") || `<p class="hint">還沒有題目。</p>`}`;
+  const box = $("step-cases");
+  $("gen").onclick = generate;
+  $("gen-n").oninput = () => { E.gen.n = Number($("gen-n").value) || 1; };
+  $("gen-hint").oninput = () => { E.gen.hint = $("gen-hint").value; };
+  $("typed-toggle").onclick = () => { E.typed.open = !E.typed.open; renderCases(); };
+  $("typed").oninput = () => { E.typed.text = $("typed").value; };
+  $("typed-add").onclick = addTyped;
+  if ($("typed-input")) wireFields($("typed-input"), () => E.typed.input, () => {}, renderCases);
+  $("case-add").onclick = () => {
+    const c = { name: nextName(), input: clone(t.example) };
+    if (dialogue()) Object.assign(c, { partner: "", turns: 5 });
+    d.cases.push(c); E.open = c;
+    planEdited(true);
+  };
+  box.querySelectorAll("[data-open]").forEach(el => el.onclick = () => { const c = d.cases[+el.dataset.open]; E.open = E.open === c ? null : c; renderCases(); });
+  box.querySelectorAll("[data-del]").forEach(el => el.onclick = async () => {
+    const c = d.cases[+el.dataset.del];
+    if (!(await ask(`刪除「${c.name}」？`, "刪除"))) return;
+    d.cases.splice(+el.dataset.del, 1);
+    planEdited(true);
+  });
+  box.querySelectorAll("[data-run]").forEach(el => el.onchange = () => { const c = d.cases[+el.dataset.run]; el.checked ? E.off.delete(c) : E.off.add(c); renderRun(); });
+  box.querySelectorAll("[data-input]").forEach(el => { const i = +el.dataset.input; wireFields(el, () => (d.cases[i].input ??= {}), () => planEdited(), () => planEdited(true)); });
+  box.querySelectorAll("[data-mode]").forEach(el => el.onchange = () => {
+    const c = d.cases[+el.dataset.mode];
+    if (el.value === "script") { delete c.partner; delete c.turns; c.script = []; } else { delete c.script; Object.assign(c, { partner: "", turns: 5 }); }
+    planEdited(true);
+  });
+  box.querySelectorAll("[data-script]").forEach(el => el.oninput = () => { d.cases[+el.dataset.script].script = el.value.split("\n").map(s => s.trim()).filter(Boolean); planEdited(); });
+  wirePlanFields(box);
+}
+
+function nextName() {
+  let n = E.draft.cases.length + 1;
+  while (E.draft.cases.some(c => c.name === `第 ${n} 題`)) n++;
+  return `第 ${n} 題`;
+}
+
+function addTyped() {
+  const t = current(), text = $("typed").value, errors = [], added = [];
+  if (dialogue()) {
+    for (const block of text.split(/\n\s*\n/)) {
+      const script = block.split("\n").map(s => s.trim()).filter(Boolean);
+      if (script.length) added.push({ input: clone(E.typed.input), script });
+    }
+  } else {
+    const field = singleTextField(t.inputSchema);
+    text.split("\n").forEach((raw, i) => {
+      const line = raw.trim();
+      if (!line) return;
+      if (line.startsWith("{")) { try { added.push({ input: JSON.parse(line) }); } catch { errors.push(`第 ${i + 1} 行不是 JSON`); } }
+      else if (field) added.push({ input: { [field]: line } });
+      else errors.push(`第 ${i + 1} 行要寫成 JSON`);
+    });
+  }
+  if (errors.length) { $("typed-msg").innerHTML = `<span class="fail">${esc(errors.join("；"))}</span>`; return; }
+  if (!added.length) { $("typed-msg").textContent = "沒有東西可以加"; return; }
+  for (const c of added) E.draft.cases.push({ name: nextName(), ...c });
+  E.typed.text = ""; E.typed.open = false;
+  planEdited(true);
+}
+
+async function generate() {
+  if (E.gen.busy) return;
+  const task = S.task;
+  E.gen.busy = true; renderCases();
+  const t0 = performance.now();
+  const timer = setInterval(() => { if ($("gen-status")) $("gen-status").textContent = `AI 想題目中… ${((performance.now() - t0) / 1000).toFixed(0)} 秒`; }, 500);
+  try {
+    const r = await api("POST", "/api/eval/generate", { task, count: E.gen.n, hint: E.gen.hint, existing: E.draft.cases.map(c => c.name) });
+    if (task !== S.task) return;
+    E.draft.cases.push(...r.cases);
+    notify(`加了 ${r.cases.length} 題${r.dropped ? `（另外 ${r.dropped} 題格式不對，丟掉了）` : ""}`, r.cases.length ? "ok" : "warn", 4000);
+    planEdited();
+  } catch (e) { notify(e.message, "bad"); }
+  finally { clearInterval(timer); E.gen.busy = false; if (task === S.task) renderPlan(); }
+}
+
+// ── ② 要檢查什麼 ──
+function critHtml(c, path) {
+  const kinds = Object.entries(KINDS).filter(([k]) => k !== "check" || E.plan.checks.length || c.type === "check");
+  const kind = `<select data-kind="${esc(JSON.stringify(path))}" class="more">${kinds.map(([v, k]) => `<option value="${v}" ${v === c.type ? "selected" : ""}>${k.label}</option>`).join("")}</select>`;
+  const body = c.type === "check"
+    ? `<select data-f="${esc(JSON.stringify([...path, "name"]))}" style="flex:1">${[...new Set([c.name, ...E.plan.checks].filter(Boolean))].map(n => `<option ${n === c.name ? "selected" : ""}>${esc(n)}</option>`).join("")}</select>`
+    : `<textarea data-f="${esc(JSON.stringify([...path, "text"]))}" rows="${Math.min(4, Math.ceil(String(c.text ?? "").length / 55) || 1)}" placeholder="${esc(KINDS[c.type].hint)}">${esc(c.text)}</textarea>`;
+  const threshold = c.type === "score" ? `<span class="hint">低於</span><input type="number" step="0.1" min="0" max="1" data-f="${esc(JSON.stringify([...path, "threshold"]))}" data-num value="${c.threshold ?? 0.6}" style="width:60px">` : "";
+  return `<div class="crit">${body}${threshold}${kind}<button class="icon" data-crit-del="${esc(JSON.stringify(path))}" title="刪除">🗑</button></div>`;
+}
+const critList = (list, path) => list.map((c, j) => critHtml(c, [...path, j])).join("") + `<button class="btn small" data-crit-add="${esc(JSON.stringify(path))}">＋ 一條</button>`;
+
+function renderCriteria() {
+  $("step-criteria").innerHTML = `
+    <h2><span class="n">2</span>要檢查什麼（${E.draft.criteria.length}）</h2>
+    <p class="hint">每一題都會檢查。評審 AI 照這裡寫的判斷。</p>
+    ${critList(E.draft.criteria, ["criteria"])}
+    <p class="hint more">要用程式檢查（例如字數、格式）：${E.plan.hasChecksFile
+      ? `寫在 tasks/${esc(S.task)}/eval.ts，寫好之後上面選「用程式檢查」${E.plan.checks.length ? `（現在有：${E.plan.checks.map(esc).join("、")}）` : ""}`
+      : `<button class="btn small" id="checks-new">建立 eval.ts</button>`}</p>`;
+  $("checks-new")?.addEventListener("click", async () => {
+    try { await api("POST", "/api/eval/checks", { task: S.task }); notify(`建好了 tasks/${S.task}/eval.ts，在編輯器裡打開寫。`, "ok", 5000); }
+    catch (e) { notify(e.message, "bad"); }
+  });
+  wirePlanFields($("step-criteria"));
+}
+
+/** 題目和標準共用：文字欄位、標準的種類、加刪標準 */
+function wirePlanFields(box) {
+  box.querySelectorAll("[data-f]").forEach(el => el.oninput = el.onchange = () => {
+    setIn(E.draft, JSON.parse(el.dataset.f), el.dataset.num === undefined ? el.value : el.value === "" ? undefined : Number(el.value));
+    planEdited();
+  });
+  box.querySelectorAll("[data-kind]").forEach(el => el.onchange = () => {
+    const path = JSON.parse(el.dataset.kind);
+    const old = getIn(E.draft, path);
+    setIn(E.draft, path, el.value === "check" ? { type: "check", name: E.plan.checks[0] ?? "" } : { type: el.value, text: old.text ?? "" });
+    planEdited(true);
+  });
+  box.querySelectorAll("[data-crit-add]").forEach(el => el.onclick = () => {
+    const path = JSON.parse(el.dataset.critAdd);
+    if (!getIn(E.draft, path)) setIn(E.draft, path, []);
+    getIn(E.draft, path).push({ type: "yesno", text: "" });
+    planEdited(true);
+    setTimeout(() => { const all = box.querySelectorAll(`[data-f]`); all[all.length - 1]?.focus(); });
+  });
+  box.querySelectorAll("[data-crit-del]").forEach(el => el.onclick = () => {
+    const path = JSON.parse(el.dataset.critDel);
+    setIn(E.draft, path, undefined);
+    if (path[0] === "cases" && !getIn(E.draft, path.slice(0, -1)).length) setIn(E.draft, path.slice(0, -1), undefined);
+    planEdited(true);
+  });
+}
+
+// ── ③ 跑 ──
+function renderRun() {
+  const variants = byMainFirst(E.plan.variants);
+  const v = variants.filter(x => !E.offVariants.has(x)).length;
+  const c = E.draft.cases.filter(x => !E.off.has(x)).length;
+  const running = E.running;
+  $("step-run").innerHTML = `
+    <h2><span class="n">3</span>比較</h2>
+    <div class="row"><span>版本：</span>${variants.map(x => `<label><input type="checkbox" data-variant="${esc(x)}" ${E.offVariants.has(x) ? "" : "checked"}> ${esc(x)}</label>`).join("")}
+      <span class="hint">${v} 個版本 × ${c} 題 = ${v * c} 次</span>
+      <span class="spacer"></span>
+      ${running ? `<span id="run-time" class="hint"></span><button class="btn danger" id="stop">停止</button>` : `<button class="btn primary" id="start" ${v && c ? "" : "disabled"}>開始</button>`}
+    </div>
+    ${running || E.lastLog ? `<pre class="log" id="log">${esc(E.lastLog ?? "")}</pre>` : ""}`;
+  $("step-run").querySelectorAll("[data-variant]").forEach(el => el.onchange = () => { el.checked ? E.offVariants.delete(el.dataset.variant) : E.offVariants.add(el.dataset.variant); renderRun(); });
+  $("start")?.addEventListener("click", () => start(E.plan.variants.filter(x => !E.offVariants.has(x)), E.draft.cases.filter(x => !E.off.has(x)).map(x => x.name)));
+  $("stop")?.addEventListener("click", async () => { $("stop").disabled = true; try { await api("POST", "/api/eval/stop"); } catch (e) { notify(e.message, "bad"); } });
+  const log = $("log");
+  if (log) log.scrollTop = log.scrollHeight;
+}
+
+async function start(variants, cases) {
+  if (!(await savePlan())) { notify("題目或檢查的內容還沒存好，看 ① 右上角的原因。"); return; }
+  if (!(await ask(`開始：${variants.length} 個版本 × ${cases.length} 題，會呼叫模型很多次。`, "開始"))) return;
+  try {
+    const meta = await api("POST", "/api/eval/start", { task: S.task, variants, cases });
+    adoptRunning({ meta, seconds: 0, log: "" });
+  } catch (e) { notify(e.message, "bad"); }
+}
+
+/** 有評估在跑（自己按的、或打開網頁時就在跑）：即時輸出顯示在 ③ */
+function adoptRunning(st) {
+  E.running = st.meta; E.lastLog = st.log ?? "";
+  E.t0 = performance.now() - (st.seconds ?? 0) * 1000;
+  clearInterval(E.timer);
+  const tick = () => {
+    const s = Math.floor((performance.now() - E.t0) / 1000);
+    $("eval-chip").hidden = false; $("eval-chip").textContent = `${E.running.task} 比較中 ${s} 秒`;
+    if ($("run-time")) $("run-time").textContent = `${s} 秒`;
+  };
+  tick(); E.timer = setInterval(tick, 500);
+  if (E.plan) renderRun();
+}
+
+function onEvalLog({ id, line }) {
+  if (!E.running) { api("GET", "/api/eval/status").then(st => { if (st.running) adoptRunning(st); }).catch(() => {}); return; }
+  if (E.running.id !== id) return;
+  E.lastLog += line + "\n";
+  const log = $("log");
+  if (!log) return;
+  const atBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 40;
+  log.textContent = E.lastLog;
+  if (atBottom) log.scrollTop = log.scrollHeight;
+}
+
+function onEvalDone(meta) {
+  if (!E.running || E.running.id !== meta.id) return;
+  clearInterval(E.timer);
+  E.running = null; $("eval-chip").hidden = true;
+  notify(`比較${STATUS[meta.status] ?? meta.status}（${meta.seconds} 秒）`, meta.status === "done" ? "ok" : "warn", 4000);
+  if (meta.task === S.task && !$("view-compare").hidden) { E.evalId = meta.id; renderPlan(); renderResults(); }
+}
+
+// ── ④ 結果 ──
+const reportUrl = (id, row) => `/api/eval?task=${q(S.task)}&id=${q(id)}&format=html${row === undefined ? "" : `&row=${row}`}`;
+
+async function renderResults() {
+  const list = await api("GET", `/api/evals?task=${q(S.task)}`).catch(() => []);
+  const done = list.filter(e => e.status !== "running");
+  if (!done.length) { $("step-results").innerHTML = `<h2><span class="n">4</span>結果</h2><p class="hint">還沒有比較過。</p>`; return; }
+  E.evalId = done.some(e => e.id === E.evalId) ? E.evalId : done[0].id;
+  const r = await api("GET", `/api/eval?task=${q(S.task)}&id=${q(E.evalId)}`).catch(e => ({ error: e.message }));
+  const history = `<div class="history">${done.map(e => `<button class="ver ${e.id === E.evalId ? "active" : ""}" data-eval="${esc(e.id)}">${runTime(e.startedAt)}</button>`).join("")}</div>`;
+  let body = "";
+  if (r.error) body = `<div class="note bad">${esc(r.error)}</div>`;
+  else {
+    const errorCases = [...new Set(r.summary.flatMap(s => s.errorCases ?? []))];
+    const errorVariants = r.summary.filter(s => s.errors).map(s => s.variant);
+    body = `<p class="hint">${STATUS[r.meta.status] ?? r.meta.status}　${r.meta.seconds ?? "?"} 秒　模型 ${esc(r.meta.model)}　評審 ${esc(r.meta.judge)}</p>
+      ${r.meta.note ? `<div class="note warn">${esc(r.meta.note)}</div>` : ""}
+      ${r.summary.map(s => `<div class="result"><strong>${esc(s.variant)}</strong>　<span class="pass">過了 ${s.passed}</span>／${s.total}
+        ${s.failed ? `　<span class="fail">沒過 ${s.failed}</span>` : ""}${s.errors ? `　<span class="hint">沒跑完 ${s.errors}（${esc(s.errorCases.join("、"))}）</span>` : ""}</div>`).join("")}
+      ${errorCases.length ? `<div class="row"><button class="btn" id="rerun">只重跑沒跑完的 ${errorCases.length} 題</button><span class="hint">網路或模型出錯而沒跑完的，不算沒過</span></div>` : ""}
+      ${r.hasResult ? `<p class="label">每一題的詳細（各版本的回覆、每條檢查的理由），在新分頁打開：</p>
+        <div class="history">${r.rows.map((n, i) => `<a class="btn small" href="${reportUrl(E.evalId, i)}" target="_blank" rel="noopener">${esc(n)}</a>`).join("")}
+        <a class="btn small" href="${reportUrl(E.evalId)}" target="_blank" rel="noopener">全部</a>
+        <a class="btn small" href="${reportUrl(E.evalId)}&download=1">下載報表</a></div>`
+        : `<div class="note warn">這次沒有產生結果。</div><details><summary>promptfoo 的輸出</summary><pre class="log">${esc(r.log)}</pre></details>`}`;
+    setTimeout(() => $("rerun")?.addEventListener("click", () => start(errorVariants, errorCases)));
+  }
+  $("step-results").innerHTML = `<h2><span class="n">4</span>結果</h2>${history}${body}`;
+  $("step-results").querySelectorAll("[data-eval]").forEach(b => b.onclick = () => { E.evalId = b.dataset.eval; renderResults(); });
+}
+
+// ───────── 檔案在網頁外被改了、伺服器重啟了 ─────────
+async function onFilesChanged() {
+  if (!S.task) return;
+  await loadState();
+  const t = current();
+  // 正在改的 prompt：網頁上沒有還沒存的修改，就換成檔案裡的內容
+  const disk = (await api("GET", fileUrl(W.file)).catch(() => null))?.content;
+  if (disk !== undefined && disk !== W.saved[W.file]) {
+    const typing = W.text !== W.saved[W.file];
+    W.saved[W.file] = disk;
+    if (!typing) { W.text = disk; $("editor").value = disk; }
+    else notify(`${W.file} 在網頁外被改了；你在這裡打的會蓋掉它。`);
+  }
+  if (W.inputSource && !t.files.inputs.includes(W.inputSource)) await loadInput("");
+  renderVersions(); preview();
+  if (!$("view-compare").hidden) await loadPlan();
+}
+
+function connect() {
+  const es = new EventSource("/api/events");
+  es.addEventListener("hello", async e => {
+    const { boot } = JSON.parse(e.data);
+    if (S.boot && boot !== S.boot) { await onFilesChanged(); notify("伺服器重新載入了。", "ok", 2000); }
+    else if ($("notice").classList.contains("bad")) notify("");
+  });
+  es.addEventListener("files", () => onFilesChanged().catch(() => {}));
+  es.addEventListener("eval-log", e => onEvalLog(JSON.parse(e.data)));
+  es.addEventListener("eval-done", e => onEvalDone(JSON.parse(e.data)));
+  es.addEventListener("reload", () => flushSaves().then(() => location.reload()));
+  es.onerror = () => notify("連不到伺服器：可能在重新啟動，或程式有錯（看終端機）。好了會自動恢復。", "bad");
+}
+
+// ───────── 啟動 ─────────
+window.onbeforeunload = e => { if (W.text !== W.saved[W.file] || W.inputTimer || E.saveTimer) e.preventDefault(); };
+(async () => {
+  await loadState();
+  connect();
+  const st = await api("GET", "/api/eval/status").catch(() => ({ running: false }));
+  if (st.running) adoptRunning(st);
+})();
+</script>
+</body>
+</html>

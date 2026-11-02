@@ -1,0 +1,22 @@
+---
+config:
+  temperature: 0.7
+---
+{{role "system"}}
+（寫給 AI 的角色與規則）
+
+## 題目
+{{question}}
+
+{{> no-judgment}}
+
+## 記錄
+學生提出新的想法時，先呼叫 record，再回覆學生。
+
+## 第 {{round}} 輪
+{{#if mentioned}}
+學生已經提過：
+{{#each mentioned}}
+- {{this}}
+{{/each}}
+{{/if}}

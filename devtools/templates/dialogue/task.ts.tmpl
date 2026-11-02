@@ -1,0 +1,35 @@
+// __NAME__：（一句話說明這個對話做什麼）
+import { defineDialogue, Type } from "../../runtime/index.ts";
+
+export default defineDialogue({
+  // 開對話時的輸入格式
+  input: Type.Object({
+    question: Type.String({ description: "題目" }),
+  }),
+
+  example: { question: "範例題目" },
+
+  // 對話開始時的狀態
+  state: () => ({
+    mentioned: [] as string[],
+  }),
+
+  // 每輪 AI 回覆前：回傳這一輪 main.prompt 拿到的資料
+  promptInput: (input, s, round) => ({ ...input, round, mentioned: s.mentioned }),
+
+  // AI 可以呼叫的工具：回報對話進度、更新狀態
+  tools: tool => [
+    tool({
+      name: "record",
+      description: "學生提出新的想法時呼叫，point 填學生的重點。",
+      parameters: Type.Object({ point: Type.String() }),
+      run: ({ point }, s) => {
+        s.mentioned.push(point);
+        return "已記錄。";
+      },
+    }),
+  ],
+
+  // 每輪回覆完交給後端的進度
+  progress: (s, round) => ({ rounds: round, mentioned: s.mentioned.length }),
+});

@@ -1,0 +1,10 @@
+// __NAME__ 自己的測試（共通檢查由 tests/tasks.test.ts 自動跑）
+import { expect, test } from "bun:test";
+import { render, tasks } from "../../devtools/testing.ts";
+
+const task = tasks["__NAME__"];
+
+test("輸入會出現在 prompt 裡", async () => {
+  const r = await render(task, task.example);
+  expect(r.user).toContain(task.example.text);
+});
