@@ -1,0 +1,18 @@
+// __NAME__：（一句話說明這個任務做什麼）
+import { defineOneShot, Type } from "../../runtime/index.ts";
+
+export default defineOneShot({
+  // 輸入格式：後端傳進來、AI 看得到的資料
+  input: Type.Object({
+    text: Type.String({ description: "要處理的內容" }),
+  }),
+
+  // 輸出格式：AI 要交回的結果（照前端 types.ts 的型別寫）
+  output: Type.Object({
+    summary: Type.String({ maxLength: 100 }),
+  }),
+
+  example: { text: "範例輸入" },
+
+  exampleOutput: { summary: "範例輸出" },
+});

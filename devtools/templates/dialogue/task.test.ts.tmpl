@@ -1,0 +1,12 @@
+// __NAME__ 自己的測試（共通檢查由 tests/tasks.test.ts 自動跑）
+import { expect, test } from "bun:test";
+import { render, tasks } from "../../devtools/testing.ts";
+
+const task = tasks["__NAME__"];
+
+test("學生提過的想法會出現在下一輪的 prompt 裡", async () => {
+  const state = task.state();
+  state.mentioned.push("救越多人越好");
+  const r = await render(task, task.example, { state, round: 2 });
+  expect(r.system).toContain("救越多人越好");
+});

@@ -1,0 +1,8 @@
+## 評分（每項 0–5 分，該環節不適用填 null）
+- evidence：有沒有具體例子或資料支持
+- reasoning：推理每一步接不接得上
+- rebuttal：有沒有正面回應對方的論點（開場 opening 填 null）
+- clarity：一般聽眾聽不聽得懂
+
+notes 每項一句，指出扣分的地方。
+verifiability：發言裡的事實有附來源 sourced／可以查證 checkable／無法查證 unverified。

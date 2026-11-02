@@ -1,0 +1,21 @@
+{
+  "providers": {
+    "glm": {
+      "baseUrl": "https://api.z.ai/api/coding/paas/v4",
+      "defaultModel": "glm-4.6",
+      "models": [
+        "glm-4.6",
+        "glm-4.7",
+        "glm-5.3",
+        "glm-4.5-air"
+      ],
+      "params": {
+        "thinking": { "type": "disabled" }
+      },
+      "notes": "OpenAI 相容（POST {baseUrl}/chat/completions、SSE、response_format）。GLM Coding Plan 用 api.z.ai/api/coding/paas/v4；一般 API 用 https://open.bigmodel.cn/api/paas/v4，兩者都需要對應方案才有額度。params 會加進每一次請求。"
+    },
+    "mock": {
+      "description": "離線規則式回覆，只用於本機開發與測試（LLM_PROVIDER=mock）"
+    }
+  }
+}
