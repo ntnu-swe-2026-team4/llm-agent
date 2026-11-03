@@ -5,6 +5,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Type } from "typebox";
+import { connection } from "../runtime/config.ts";
 import { defineDialogue, defineOneShot, type Task } from "../runtime/define.ts";
 import { reply } from "../runtime/dialogue.ts";
 import { LLMError } from "../runtime/errors.ts";
@@ -156,6 +157,84 @@ test("對話型：模型呼叫工具 → 框架執行、把結果交回去，模
     { role: "assistant", content: "", tool_calls: [{ id: "c1", type: "function", function: { name: "note", arguments: `{"text":"救多數人"}` } }] },
     { role: "tool", tool_call_id: "c1", content: "已記下。" },
   ]);
+});
+
+test("對話型：工具改了狀態，模型接著回覆時的 system 照新狀態重新渲染", async () => {
+  const task = chatTask();
+  const fake = scripted([
+    { toolCalls: [{ id: "c1", name: "note", arguments: `{"text":"救多數人"}` }] },
+    { text: "那如果是你的家人呢？" },
+  ]);
+  await reply(task, task.example, { history: [{ role: "user", text: "救多數人" }] }, { chat: fake.fn }).result;
+  expect(fake.seen[0]!.messages[0]!.content).toBe("只追問。第 1 輪，記了 0 個重點。");
+  expect(fake.seen[1]!.messages[0]!.content).toBe("只追問。第 1 輪，記了 1 個重點。");
+});
+
+test("對話型：promptInput 拿得到到目前為止的對話紀錄", async () => {
+  const seen: unknown[] = [];
+  const task = sample(defineDialogue({
+    input: Type.Object({ topic: Type.String() }),
+    example: { topic: "電車難題" },
+    state: () => ({}),
+    promptInput: (input, _s, round, history) => (seen.push(history), { ...input, round, last: history.at(-1)?.text ?? "" }),
+    progress: () => ({}),
+  }), `{{role "system"}}\n學生剛說：{{last}}\n`);
+  const fake = scripted([{ text: "為什麼？" }]);
+  await reply(task, task.example, { history: [{ role: "user", text: "I'd pull it" }] }, { chat: fake.fn }).result;
+  expect(seen[0]).toEqual([{ role: "user", text: "I'd pull it" }]);
+  expect(fake.seen[0]!.messages[0]!.content).toBe("學生剛說：I'd pull it");
+});
+
+test("對話型：工具可以是非同步（例如要連網查詢），結果等完才交回模型", async () => {
+  const task = sample(defineDialogue({
+    input: Type.Object({ topic: Type.String() }),
+    example: { topic: "電車難題" },
+    state: () => ({ looked: [] as string[] }),
+    promptInput: (input, _s, round) => ({ ...input, round }),
+    tools: tool => [tool({
+      name: "lookup",
+      description: "查名詞",
+      parameters: Type.Object({ term: Type.String() }),
+      run: async ({ term }, s) => {
+        await new Promise(r => setTimeout(r, 5));
+        s.looked.push(term);
+        return `${term}：查到了`;
+      },
+    })],
+    progress: s => ({ looked: s.looked.length }),
+  }), `{{role "system"}}\n只追問。\n`);
+  const fake = scripted([
+    { toolCalls: [{ id: "c1", name: "lookup", arguments: `{"term":"效益主義"}` }] },
+    { text: "查到了，那你怎麼看？" },
+  ]);
+  const result = await reply(task, task.example, { history: [{ role: "user", text: "效益主義是什麼" }] }, { chat: fake.fn }).result;
+  expect(result.state).toEqual({ looked: ["效益主義"] });
+  expect(fake.seen[1]!.messages.at(-1)).toEqual({ role: "tool", tool_call_id: "c1", content: "效益主義：查到了" });
+});
+
+test("對話型：模型寫了回覆又呼叫工具 → 工具照樣執行，不再請它接著寫", async () => {
+  const task = chatTask();
+  const fake = scripted([
+    { text: "那如果是你的家人呢？", toolCalls: [{ id: "c1", name: "note", arguments: `{"text":"救多數人"}` }] },
+    { text: "這段不該出現" },
+  ]);
+  const result = await reply(task, task.example, { history: [{ role: "user", text: "救多數人" }] }, { chat: fake.fn }).result;
+  expect(result.text).toBe("那如果是你的家人呢？");
+  expect(result.state).toEqual({ notes: ["救多數人"] });
+  expect(fake.seen.length).toBe(1);
+});
+
+test("對話型：模型只呼叫工具、接著回了空白 → 不給工具，再請它回覆一次", async () => {
+  const task = chatTask();
+  const fake = scripted([
+    { toolCalls: [{ id: "c1", name: "note", arguments: `{"text":"好難"}` }] },
+    { text: "  " },
+    { text: "哪一部分最難？" },
+  ]);
+  const result = await reply(task, task.example, { history: [{ role: "user", text: "好難" }] }, { chat: fake.fn }).result;
+  expect(result.text.trim()).toBe("哪一部分最難？");
+  expect(fake.seen.length).toBe(3);
+  expect(fake.seen[2]!.tools).toBeUndefined();
 });
 
 test("對話型：第幾輪看對話紀錄；上一輪的狀態傳回來，這一輪的 system 會跟著換", async () => {
@@ -319,4 +398,15 @@ test("HTTP：錯誤分類跟後端原本一樣——額度用完 503（不重試
   delete process.env.GLM_API_KEY;
   await expect(collect({ messages: [] })).rejects.toMatchObject({ code: "llm_not_configured", status: 503 });
   process.env.GLM_API_KEY = key;
+});
+
+test("connection 的 params 取代 models.json 的；LLM_PROVIDER 不是供應商名稱時，傳了網址、key、模型一樣能連", () => {
+  process.env.LLM_PROVIDER = "dev";
+  try {
+    const c = connection({ baseUrl: "http://x/v1/", apiKey: "k", model: "m", params: { thinking: { type: "enabled" } } });
+    expect(c).toMatchObject({ baseUrl: "http://x/v1", apiKey: "k", model: "m", params: { thinking: { type: "enabled" } }, mock: false });
+  } finally {
+    delete process.env.LLM_PROVIDER;
+  }
+  expect(connection({ provider: "glm" }).params).toEqual({ thinking: { type: "disabled" } });
 });

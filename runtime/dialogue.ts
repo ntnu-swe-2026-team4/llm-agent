@@ -4,7 +4,7 @@
 //     system  main.prompt 的 system 段落（每輪依狀態重新渲染）
 //     user    main.prompt 的 user 段落（題目這類背景資料），一定放在最前面
 //     …       對話紀錄（使用者、AI 交替）
-//   AI 要更新進度時會呼叫任務的工具（tools）：框架執行、把結果回給模型，模型再接著回覆
+//   AI 要更新進度時會呼叫任務的工具（tools）：框架執行、用新狀態重新渲染 system、把結果回給模型，模型再接著回覆
 //   回覆完回傳新的狀態和進度，呼叫端存起來，下次再傳回來
 import type { Static } from "typebox";
 import { connection } from "./config.ts";
@@ -58,8 +58,8 @@ function checkHistory(task: Registered<DialogueTask>, history: HistoryMessage[])
   }
 }
 
-/** 執行模型要求的工具；參數不對就把錯誤告訴模型，讓它修正 */
-function runTool<S>(tools: ToolDef<S, any>[], call: ToolCall, state: S): string {
+/** 執行模型要求的工具（可以是非同步，例如要連網查詢）；參數不對就把錯誤告訴模型，讓它修正 */
+async function runTool<S>(tools: ToolDef<S, any>[], call: ToolCall, state: S): Promise<string> {
   const tool = tools.find(t => t.name === call.name);
   if (!tool) return `沒有叫「${call.name}」的工具`;
   let args: unknown;
@@ -83,7 +83,7 @@ async function* run<S, P>(
   checkHistory(task as Registered<DialogueTask>, history);
   const round = history.filter(m => m.role === "assistant").length + 1;
   const state = structuredClone(conversation.state ?? task.state()) as S;
-  const r = await renderTask(task, input, { variant: options.variant, state, round });
+  const r = await renderTask(task, input, { variant: options.variant, state, round, history });
 
   // 離線模式：不呼叫模型，回固定的假回覆，狀態不變
   if (!options.chat && connection(options.connection).mock) {
@@ -119,7 +119,22 @@ async function* run<S, P>(
       content: result.text,
       tool_calls: calls.map(c => ({ id: c.id, type: "function" as const, function: { name: c.name, arguments: c.arguments } })),
     });
-    for (const c of calls) messages.push({ role: "tool", tool_call_id: c.id, content: runTool(tools, c, state) });
+    for (const c of calls) messages.push({ role: "tool", tool_call_id: c.id, content: await runTool(tools, c, state) });
+    // 模型已經寫了回覆：工具照樣執行，不再請它接著寫（不然同一則回覆會出現兩次）
+    if (result.text.trim()) break;
+    // 工具改了狀態：用新狀態重新渲染 system，模型接著回覆時就照新狀態（promptInput 同一輪可能被呼叫多次）
+    messages[0] = { role: "system", content: (await renderTask(task, input, { variant: options.variant, state, round, history })).system };
+  }
+
+  // 模型只呼叫工具、沒寫回覆（或回了空白）：不給工具，再請它回覆一次
+  if (!text.trim()) {
+    const stream = chatFn({ messages, tools: undefined, ...sampling(r.config), model: options.model, connection: options.connection, signal: options.signal });
+    for (;;) {
+      const next = await stream.next();
+      if (next.done) break;
+      text += next.value;
+      yield next.value;
+    }
   }
 
   return { text, state, progress: task.progress(state, round), round };

@@ -91,6 +91,8 @@
   .msg.bot { background: var(--surface-2); }
   .msg .who { font-size: 12px; color: var(--muted); }
   .msg.error { background: var(--red-soft); color: var(--red); }
+  .turn-prompt { max-width: 85%; margin: -6px 0 12px; font-size: 12px; color: var(--muted); }
+  .turn-prompt pre { max-height: 320px; overflow: auto; }
   .composer { display: flex; gap: 8px; padding: 10px 12px; border-top: 1px solid var(--border); }
   .composer textarea { min-height: 52px; }
   .answer { white-space: pre-wrap; background: var(--surface-2); border-radius: 8px; padding: 10px 12px; }
@@ -159,7 +161,7 @@
     <div class="panel-body" id="try-body">
       <div class="box" id="input-box"></div>
       <div id="try-out"></div>
-      <details id="sent"><summary>送給 AI 的內容</summary><div id="sent-body"></div></details>
+      <details id="sent"><summary>送給 AI 的內容（第 1 輪、初始狀態；對話中每一輪的在 AI 回覆下面）</summary><div id="sent-body"></div></details>
     </div>
     <div class="composer" id="composer" hidden>
       <textarea id="say" placeholder="打你要說的話，Enter 送出（Shift+Enter 換行）"></textarea>
@@ -168,7 +170,7 @@
   </section>
 </main>
 
-<!-- ───────── 比較版本：準備題目 → 要檢查什麼 → 跑 → 看結果 ───────── -->
+<!-- ───────── 比較版本：準備測試資料 → 要檢查什麼 → 跑 → 看結果 ───────── -->
 <main id="view-compare" hidden>
   <div class="steps">
     <section class="step" id="step-cases"></section>
@@ -281,7 +283,7 @@ document.querySelectorAll(".tab").forEach(b => b.onclick = async () => {
 });
 
 // ───────── 寫 prompt：版本、片段、自動存檔 ─────────
-/** file：正在改的檔案；saved：磁碟上的內容；inputSource：題目來自哪裡（"" = 範例） */
+/** file：正在改的檔案；saved：磁碟上的內容；inputSource：輸入來自哪裡（"" = 範例） */
 const W = { file: "main.prompt", saved: {}, text: null, saveTimer: 0, saving: null, adding: false, inputSource: "", input: null, inputTimer: 0, runId: null, record: null, previewTimer: 0 };
 const variantOf = f => { const m = f.match(/^main(?:\.([^.]+))?\.prompt$/); return m ? (m[1] ?? "main") : null; };
 const fileOfVariant = v => (v === "main" ? "main.prompt" : `main.${v}.prompt`);
@@ -368,7 +370,7 @@ function renderFoot(unknown = [], error = "") {
   const chips = parts.map(p => `<button class="ver part ${p.file === W.file ? "active" : ""}" data-part="${esc(p.file)}" ${p.missing ? "data-missing" : ""}>${esc(p.name)}${p.shared ? "（共用）" : ""}${p.missing ? "（還沒有，點了建立）" : ""}</button>`).join(" ");
   const shared = W.file.startsWith("shared/") ? `<div class="note warn">這是共用片段，所有任務都會用到它。</div>` : "";
   const warn = error ? `<div class="note bad">${esc(error)}</div>`
-    : unknown.length ? `<div class="note warn">⚠ 題目裡沒有 ${unknown.map(u => `<code>{{${esc(u.name)}}}</code>`).join("、")}，送出去會是空的（名稱打錯了？）</div>` : "";
+    : unknown.length ? `<div class="note warn">⚠ 輸入裡沒有 ${unknown.map(u => `<code>{{${esc(u.name)}}}</code>`).join("、")}，送出去會是空的（名稱打錯了？）</div>` : "";
   $("editor-foot").innerHTML = shared + warn + (parts.length || back ? `<div>${back}${parts.length ? `<span class="hint">用到的片段：</span>${chips}` : ""}</div>` : "");
   $("editor-foot").hidden = !$("editor-foot").innerHTML;
   $("editor-foot").querySelector("[data-back]")?.addEventListener("click", () => openFile(fileOfVariant(tryVariant)));
@@ -433,13 +435,13 @@ async function preview() {
   const edits = { [W.file]: W.text };
   try {
     const r = await api("POST", "/api/render", { task: S.task, variant: tryVariant, edits, input: W.input });
-    if (r.inputErrors) { renderFoot([], `題目不符合 task.ts 的格式：\n- ${r.inputErrors.join("\n- ")}`); $("sent-body").innerHTML = ""; return; }
+    if (r.inputErrors) { renderFoot([], `輸入不符合 task.ts 的格式：\n- ${r.inputErrors.join("\n- ")}`); $("sent-body").innerHTML = ""; return; }
     renderFoot(r.unknown);
     $("sent-body").innerHTML = `<p class="label">system</p><pre>${esc(r.system)}</pre>` + (r.user ? `<p class="label">user</p><pre>${esc(r.user)}</pre>` : "");
   } catch (e) { renderFoot([], e.message); }
 }
 
-// ───────── 題目：依 task.ts 的 input 產生的表單 ─────────
+// ───────── 輸入：依 task.ts 的 input 產生的表單 ─────────
 function defaultFor(s) {
   if (s.enum) return s.enum[0];
   if (s.type === "string") return "";
@@ -514,22 +516,22 @@ function wireFields(box, root, edited, redraw) {
 
 const inputName = f => f.replace(/^inputs\//, "").replace(/\.json$/, "");
 
-/** 題目：範例（task.ts）或存好的題目（inputs/）。存好的題目改了自動存回去 */
+/** 輸入：範例（task.ts）或存好的輸入（inputs/）。存好的輸入改了自動存回去 */
 function renderInput() {
   const t = current();
   if (!t) return;
-  const locked = Boolean(W.runId); // 已經開始的試跑：題目固定
+  const locked = Boolean(W.runId); // 已經開始的試跑：輸入固定
   const box = $("input-box");
   if (locked) {
-    box.innerHTML = `<div class="box-head"><strong>題目</strong><span class="hint">這次試跑用的；要換題目，按「重新開始」</span></div><pre>${esc(pretty(W.record?.input ?? W.input))}</pre>`;
+    box.innerHTML = `<div class="box-head"><strong>輸入</strong><span class="hint">這次試跑用的；要換輸入，按「重新開始」</span></div><pre>${esc(pretty(W.record?.input ?? W.input))}</pre>`;
     return;
   }
   const options = [["", "範例"], ...t.files.inputs.map(f => [f, inputName(f)])];
-  box.innerHTML = `<div class="box-head"><strong>題目</strong>
+  box.innerHTML = `<div class="box-head"><strong>輸入</strong>
       <select id="input-src">${options.map(([v, l]) => `<option value="${esc(v)}" ${v === W.inputSource ? "selected" : ""}>${esc(l)}</option>`).join("")}</select>
       <span class="spacer"></span>
-      <span id="input-saveas"><button class="btn small" id="input-new">存成新題目</button></span>
-      ${W.inputSource ? `<button class="icon" id="input-del" title="刪除這個題目">🗑</button>` : ""}
+      <span id="input-saveas"><button class="btn small" id="input-new">另存一份</button></span>
+      ${W.inputSource ? `<button class="icon" id="input-del" title="刪除這份輸入">🗑</button>` : ""}
     </div>
     <div id="input-fields">${fieldHtml(t.inputSchema, W.input, [])}</div>`;
   wireFields($("input-fields"), () => W.input, inputEdited, () => { renderInput(); inputEdited(); });
@@ -542,7 +544,7 @@ function renderInput() {
     $("input-name").onkeydown = e => { if (e.key === "Enter") go(); if (e.key === "Escape") renderInput(); };
   };
   $("input-del")?.addEventListener("click", async () => {
-    if (!(await ask(`刪除題目「${inputName(W.inputSource)}」？`, "刪除"))) return;
+    if (!(await ask(`刪除輸入「${inputName(W.inputSource)}」？`, "刪除"))) return;
     try {
       Object.assign(current(), (await api("DELETE", "/api/file", { task: S.task, file: W.inputSource })).task);
       await loadInput("");
@@ -562,7 +564,7 @@ async function saveInput() {
   if (!W.inputSource) return;
   const content = pretty(W.input) + "\n";
   try { await api("PUT", "/api/file", { task: S.task, file: W.inputSource, content }); W.saved[W.inputSource] = content; }
-  catch (e) { notify(`題目沒存：${e.message}`, "bad"); }
+  catch (e) { notify(`輸入沒存：${e.message}`, "bad"); }
 }
 
 async function loadInput(source) {
@@ -579,7 +581,7 @@ async function loadInput(source) {
 }
 
 async function saveInputAs(name) {
-  if (!INPUT_NAME.test(name)) { notify("題目名稱只能用文字、數字、底線、減號"); return; }
+  if (!INPUT_NAME.test(name)) { notify("名稱只能用文字、數字、底線、減號"); return; }
   const file = `inputs/${name}.json`;
   try {
     const data = await api("PUT", "/api/file", { task: S.task, file, content: pretty(W.input) + "\n", create: true });
@@ -606,7 +608,7 @@ function setDownload() {
   if (W.runId) { $("run-download").href = `/api/run?task=${q(S.task)}&id=${q(W.runId)}&format=md`; $("run-download").download = ""; }
 }
 
-/** 新的試跑：題目可以改；對話型清空對話 */
+/** 新的試跑：輸入可以改；對話型清空對話 */
 function newTry() {
   W.runId = null; W.record = null;
   $("try-version").textContent = `版本 ${tryVariant}`;
@@ -669,6 +671,13 @@ function addMsg(who, text, cls, meta = "") {
   $("try-body").scrollTop = $("try-body").scrollHeight;
 }
 
+/** AI 回覆下面：這一輪實際送給 AI 的 system prompt 和回覆完的進度 */
+function addTurnPrompt(t) {
+  if (!t.systemPrompt) return;
+  const progress = t.progress === undefined ? "" : `<p class="label">回覆完的進度</p><pre>${esc(pretty(t.progress))}</pre>`;
+  $("chat").insertAdjacentHTML("beforeend", `<details class="turn-prompt"><summary>第 ${t.round} 輪送給 AI 的內容</summary><p class="label">system</p><pre>${esc(t.systemPrompt)}</pre>${progress}</details>`);
+}
+
 function addProgress(progress) {
   $("chat").querySelector("details.progress")?.remove();
   if (progress === undefined) return;
@@ -692,7 +701,7 @@ async function openChat() {
     const rec = await api("POST", "/api/chat/open", { task: S.task, variant: tryVariant, input: W.input });
     stop();
     const first = rec.turns?.[0];
-    if (first?.user === null) { addMsg("AI", first.reply, "bot", `${first.seconds} 秒`); addProgress(first.progress); }
+    if (first?.user === null) { addMsg("AI", first.reply, "bot", `${first.seconds} 秒`); addTurnPrompt(first); addProgress(first.progress); }
     started(rec);
     return true;
   } catch (e) {
@@ -713,6 +722,7 @@ async function say(text, again = false) {
     const r = await api("POST", "/api/chat/say", { task: S.task, id: W.runId, text });
     stop();
     addMsg("AI", r.reply, "bot", `${r.seconds} 秒`);
+    addTurnPrompt(r);
     addProgress(r.progress);
   } catch (e) {
     stop();
@@ -732,6 +742,7 @@ async function openRun(id) {
         if (t.user !== null) addMsg("你", t.user, "user", `第 ${t.round} 輪`);
         if (t.error) $("chat").insertAdjacentHTML("beforeend", `<div class="msg error">（${t.seconds} 秒）${esc(t.error)}</div>`);
         else addMsg("AI", t.reply, "bot", `${t.seconds} 秒`);
+        addTurnPrompt(t);
       }
       $("chat-start")?.remove();
       addProgress([...(r.turns ?? [])].reverse().find(t => t.progress)?.progress);
@@ -743,7 +754,7 @@ async function openRun(id) {
 // ───────── 比較版本 ─────────
 /**
  * plan：伺服器上的評估內容；draft：網頁上的 evals.json（改了自動存）
- * off / offVariants：這次不跑的題目（記物件）和版本；open：展開的那一筆
+ * off / offVariants：這次不跑的測試資料（記物件）和版本；open：展開的那一筆
  */
 const E = { plan: null, draft: null, saveTimer: 0, saveError: "", off: new WeakSet(), offVariants: new Set(), open: null,
   typed: { open: false, text: "", input: null }, gen: { n: 3, hint: "", busy: false },
@@ -800,7 +811,7 @@ function renderPlan() {
   renderCases(); renderCriteria(); renderRun();
 }
 
-// ── ① 題目 ──
+// ── ① 測試資料 ──
 function caseSummary(c) {
   const text = Object.values(c.input ?? {}).find(v => typeof v === "string" && v.trim()) ?? JSON.stringify(c.input ?? {});
   const parts = [String(text).replace(/\s+/g, " ").slice(0, 50)];
@@ -828,13 +839,13 @@ function caseHtml(c, i) {
     <div class="row">${run}<button class="icon" data-open="${i}">▾</button>
       <input type="text" data-f="${esc(JSON.stringify(["cases", i, "name"]))}" value="${esc(c.name)}" placeholder="名稱" style="flex:1">
       <button class="icon" data-del="${i}" title="刪除">🗑</button></div>
-    <div class="field"><div class="fname">題目</div><div class="obj" data-input="${i}">${fieldHtml(t.inputSchema, c.input ?? {}, [])}</div></div>
+    <div class="field"><div class="fname">輸入</div><div class="obj" data-input="${i}">${fieldHtml(t.inputSchema, c.input ?? {}, [])}</div></div>
     ${other}
     <div class="field"><div class="fname">這一筆另外要檢查的</div>${critList(c.criteria ?? [], ["cases", i, "criteria"])}</div>
   </div>`;
 }
 
-/** 輸入只有一個必填的文字欄位：「自己打」一行就是一題 */
+/** 輸入只有一個必填的文字欄位：「自己打」一行就是一筆 */
 function singleTextField(schema) {
   const req = schema.required ?? [];
   return req.length === 1 && schema.properties?.[req[0]]?.type === "string" && !schema.properties[req[0]].enum ? req[0] : null;
@@ -845,23 +856,23 @@ function renderCases() {
   const field = singleTextField(t.inputSchema);
   if (dialogue()) E.typed.input ??= clone(t.example);
   const placeholder = dialogue() ? "對方說的話，一行一句；空一行就是另一筆"
-    : field ? "一行一題" : `一行一題，寫成 JSON，例：${JSON.stringify(t.example)}`;
+    : field ? "一行一筆" : `一行一筆，寫成 JSON，例：${JSON.stringify(t.example)}`;
   $("step-cases").innerHTML = `
-    <h2><span class="n">1</span>題目（${d.cases.length}）<span class="spacer"></span><span class="saved" id="plan-saved"></span></h2>
+    <h2><span class="n">1</span>測試資料（${d.cases.length}）<span class="spacer"></span><span class="saved" id="plan-saved"></span></h2>
     <div class="row">
-      <button class="btn" id="gen" ${E.gen.busy ? "disabled" : ""}>讓 AI 想</button>
-      <input type="number" id="gen-n" min="1" max="20" value="${E.gen.n}" style="width:56px"><span class="hint">個</span>
+      <button class="btn" id="gen" ${E.gen.busy ? "disabled" : ""}>讓 AI 產生</button>
+      <input type="number" id="gen-n" min="1" max="20" value="${E.gen.n}" style="width:56px"><span class="hint">筆</span>
       <input type="text" id="gen-hint" value="${esc(E.gen.hint)}" placeholder="想要什麼樣的（可不填）" style="flex:1;min-width:180px">
       <button class="btn" id="typed-toggle">自己打</button>
       <button class="btn" id="case-add">＋ 一筆</button>
     </div>
-    <div id="gen-status" class="hint">${E.gen.busy ? "AI 想題目中…" : ""}</div>
+    <div id="gen-status" class="hint">${E.gen.busy ? "AI 產生中…" : ""}</div>
     <div class="box" ${E.typed.open ? "" : "hidden"}>
-      ${dialogue() ? `<div class="field"><div class="fname">這幾筆的題目</div><div class="obj" id="typed-input">${fieldHtml(t.inputSchema, E.typed.input, [])}</div></div>` : ""}
+      ${dialogue() ? `<div class="field"><div class="fname">這幾筆共用的輸入</div><div class="obj" id="typed-input">${fieldHtml(t.inputSchema, E.typed.input, [])}</div></div>` : ""}
       <textarea id="typed" rows="5" placeholder="${esc(placeholder)}">${esc(E.typed.text)}</textarea>
       <div class="row"><button class="btn primary" id="typed-add">加進去</button><span class="hint" id="typed-msg"></span></div>
     </div>
-    ${d.cases.map(caseHtml).join("") || `<p class="hint">還沒有題目。</p>`}`;
+    ${d.cases.map(caseHtml).join("") || `<p class="hint">還沒有測試資料。</p>`}`;
   const box = $("step-cases");
   $("gen").onclick = generate;
   $("gen-n").oninput = () => { E.gen.n = Number($("gen-n").value) || 1; };
@@ -896,8 +907,8 @@ function renderCases() {
 
 function nextName() {
   let n = E.draft.cases.length + 1;
-  while (E.draft.cases.some(c => c.name === `第 ${n} 題`)) n++;
-  return `第 ${n} 題`;
+  while (E.draft.cases.some(c => c.name === `第 ${n} 筆`)) n++;
+  return `第 ${n} 筆`;
 }
 
 function addTyped() {
@@ -929,12 +940,12 @@ async function generate() {
   const task = S.task;
   E.gen.busy = true; renderCases();
   const t0 = performance.now();
-  const timer = setInterval(() => { if ($("gen-status")) $("gen-status").textContent = `AI 想題目中… ${((performance.now() - t0) / 1000).toFixed(0)} 秒`; }, 500);
+  const timer = setInterval(() => { if ($("gen-status")) $("gen-status").textContent = `AI 產生中… ${((performance.now() - t0) / 1000).toFixed(0)} 秒`; }, 500);
   try {
     const r = await api("POST", "/api/eval/generate", { task, count: E.gen.n, hint: E.gen.hint, existing: E.draft.cases.map(c => c.name) });
     if (task !== S.task) return;
     E.draft.cases.push(...r.cases);
-    notify(`加了 ${r.cases.length} 題${r.dropped ? `（另外 ${r.dropped} 題格式不對，丟掉了）` : ""}`, r.cases.length ? "ok" : "warn", 4000);
+    notify(`加了 ${r.cases.length} 筆${r.dropped ? `（另外 ${r.dropped} 筆格式不對，丟掉了）` : ""}`, r.cases.length ? "ok" : "warn", 4000);
     planEdited();
   } catch (e) { notify(e.message, "bad"); }
   finally { clearInterval(timer); E.gen.busy = false; if (task === S.task) renderPlan(); }
@@ -955,7 +966,7 @@ const critList = (list, path) => list.map((c, j) => critHtml(c, [...path, j])).j
 function renderCriteria() {
   $("step-criteria").innerHTML = `
     <h2><span class="n">2</span>要檢查什麼（${E.draft.criteria.length}）</h2>
-    <p class="hint">每一題都會檢查。評審 AI 照這裡寫的判斷。</p>
+    <p class="hint">每一筆都會檢查。評審 AI 照這裡寫的判斷。</p>
     ${critList(E.draft.criteria, ["criteria"])}
     <p class="hint more">要用程式檢查（例如字數、格式）：${E.plan.hasChecksFile
       ? `寫在 tasks/${esc(S.task)}/eval.ts，寫好之後上面選「用程式檢查」${E.plan.checks.length ? `（現在有：${E.plan.checks.map(esc).join("、")}）` : ""}`
@@ -967,7 +978,7 @@ function renderCriteria() {
   wirePlanFields($("step-criteria"));
 }
 
-/** 題目和標準共用：文字欄位、標準的種類、加刪標準 */
+/** 測試資料和標準共用：文字欄位、標準的種類、加刪標準 */
 function wirePlanFields(box) {
   box.querySelectorAll("[data-f]").forEach(el => el.oninput = el.onchange = () => {
     setIn(E.draft, JSON.parse(el.dataset.f), el.dataset.num === undefined ? el.value : el.value === "" ? undefined : Number(el.value));
@@ -1003,7 +1014,7 @@ function renderRun() {
   $("step-run").innerHTML = `
     <h2><span class="n">3</span>比較</h2>
     <div class="row"><span>版本：</span>${variants.map(x => `<label><input type="checkbox" data-variant="${esc(x)}" ${E.offVariants.has(x) ? "" : "checked"}> ${esc(x)}</label>`).join("")}
-      <span class="hint">${v} 個版本 × ${c} 題 = ${v * c} 次</span>
+      <span class="hint">${v} 個版本 × ${c} 筆 = ${v * c} 次</span>
       <span class="spacer"></span>
       ${running ? `<span id="run-time" class="hint"></span><button class="btn danger" id="stop">停止</button>` : `<button class="btn primary" id="start" ${v && c ? "" : "disabled"}>開始</button>`}
     </div>
@@ -1016,8 +1027,8 @@ function renderRun() {
 }
 
 async function start(variants, cases) {
-  if (!(await savePlan())) { notify("題目或檢查的內容還沒存好，看 ① 右上角的原因。"); return; }
-  if (!(await ask(`開始：${variants.length} 個版本 × ${cases.length} 題，會呼叫模型很多次。`, "開始"))) return;
+  if (!(await savePlan())) { notify("測試資料或檢查的內容還沒存好，看 ① 右上角的原因。"); return; }
+  if (!(await ask(`開始：${variants.length} 個版本 × ${cases.length} 筆，會呼叫模型很多次。`, "開始"))) return;
   try {
     const meta = await api("POST", "/api/eval/start", { task: S.task, variants, cases });
     adoptRunning({ meta, seconds: 0, log: "" });
@@ -1076,8 +1087,8 @@ async function renderResults() {
       ${r.meta.note ? `<div class="note warn">${esc(r.meta.note)}</div>` : ""}
       ${r.summary.map(s => `<div class="result"><strong>${esc(s.variant)}</strong>　<span class="pass">過了 ${s.passed}</span>／${s.total}
         ${s.failed ? `　<span class="fail">沒過 ${s.failed}</span>` : ""}${s.errors ? `　<span class="hint">沒跑完 ${s.errors}（${esc(s.errorCases.join("、"))}）</span>` : ""}</div>`).join("")}
-      ${errorCases.length ? `<div class="row"><button class="btn" id="rerun">只重跑沒跑完的 ${errorCases.length} 題</button><span class="hint">網路或模型出錯而沒跑完的，不算沒過</span></div>` : ""}
-      ${r.hasResult ? `<p class="label">每一題的詳細（各版本的回覆、每條檢查的理由），在新分頁打開：</p>
+      ${errorCases.length ? `<div class="row"><button class="btn" id="rerun">只重跑沒跑完的 ${errorCases.length} 筆</button><span class="hint">網路或模型出錯而沒跑完的，不算沒過</span></div>` : ""}
+      ${r.hasResult ? `<p class="label">每一筆的詳細（各版本的回覆、每條檢查的理由），在新分頁打開：</p>
         <div class="history">${r.rows.map((n, i) => `<a class="btn small" href="${reportUrl(E.evalId, i)}" target="_blank" rel="noopener">${esc(n)}</a>`).join("")}
         <a class="btn small" href="${reportUrl(E.evalId)}" target="_blank" rel="noopener">全部</a>
         <a class="btn small" href="${reportUrl(E.evalId)}&download=1">下載報表</a></div>`

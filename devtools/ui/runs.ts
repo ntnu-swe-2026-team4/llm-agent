@@ -21,7 +21,7 @@ export interface Turn {
   error?: string;
   /** AI 花了幾秒 */
   seconds: number;
-  /** 這一輪實際送給模型的 system prompt */
+  /** 這一輪 AI 回覆時實際用的 system prompt（工具改了狀態的話，是重新渲染後的版本） */
   systemPrompt: string;
   progress?: unknown;
   at: string;
@@ -118,8 +118,8 @@ async function runTurn(task: Registered<DialogueTask>, record: RunRecord, text: 
   if (text !== null) history.push({ role: "user", text });
   const round = history.filter(m => m.role === "assistant").length + 1;
 
-  // 先算出這一輪會送的 prompt，存進紀錄（用狀態的複本算，不影響真正的對話）
-  const r = await renderTask(task, record.input, { variant: record.variant, state: structuredClone(record.state ?? task.state()), round });
+  // 先算出這一輪一開始會送的 prompt（用狀態的複本算，不影響真正的對話）；出錯時存這一版
+  const r = await renderTask(task, record.input, { variant: record.variant, state: structuredClone(record.state ?? task.state()), round, history });
   if (round === 1 && r.user) record.context = r.user;
   record.config = r.config;
 
@@ -127,9 +127,11 @@ async function runTurn(task: Registered<DialogueTask>, record: RunRecord, text: 
   const turn: Turn = { round, user: text, seconds: 0, systemPrompt: r.system, at: now() };
   try {
     const result = await reply(task, record.input as never, { history, state: record.state }, { variant: record.variant }).result;
-    Object.assign(turn, { reply: result.text, progress: result.progress });
+    // AI 回覆時實際用的 prompt：工具改了狀態後會重新渲染，所以用回覆完的狀態再算一次
+    const final = await renderTask(task, record.input, { variant: record.variant, state: structuredClone(result.state), round, history });
+    Object.assign(turn, { reply: result.text, progress: result.progress, systemPrompt: final.system });
     record.state = result.state;
-    return { reply: result.text, seconds: (turn.seconds = secondsSince(t0)), progress: result.progress, round };
+    return { reply: result.text, seconds: (turn.seconds = secondsSince(t0)), progress: result.progress, round, systemPrompt: final.system };
   } catch (e) {
     turn.error = errorText(e);
     turn.seconds = secondsSince(t0);

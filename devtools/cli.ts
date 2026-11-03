@@ -13,6 +13,7 @@ import { renderTask } from "../runtime/prepare.ts";
 import { ROOT, variants } from "../runtime/prompt.ts";
 import { readEvals } from "./eval/evals-file.ts";
 import { PROMPTFOO_ENV } from "./eval/promptfoo.ts";
+import { writeBundle } from "./bundle.ts";
 import { createTask } from "./scaffold.ts";
 
 const HELP = `用法：bun llm <指令>
@@ -23,6 +24,7 @@ const HELP = `用法：bun llm <指令>
   view                       用 promptfoo 自己的網頁看評估結果
   new <任務> [--dialogue]    建立新的任務（預設單次型）
   ui                         開啟網頁介面：編輯 prompt、試跑、評估
+  bundle                     產生 Cloudflare Workers 用的入口 dist/worker.ts（打包 prompt 和預先編譯的模板）
 
 <任務> 可以是正式任務或範例。
 正式任務（tasks/）：${Object.keys(tasks).join("、") || "還沒有，用 bun llm new 建立"}
@@ -144,6 +146,11 @@ try {
     case "eval": evalTask(args[0], args.slice(1)); break;
     case "view": promptfoo(["view"]); break;
     case "new": create(args[0], args[1]); break;
+    case "bundle": {
+      const r = writeBundle();
+      console.log(`✔ ${r.out}：${r.files} 個檔案、${r.templates} 個模板`);
+      break;
+    }
     // 守門程式：.ts 或 .env 改了就重啟網頁伺服器（.prompt 檔的變動由網頁自己更新）
     case "ui": process.exitCode = spawnSync(process.execPath, [join(ROOT, "devtools", "ui", "dev.ts")], { cwd: ROOT, stdio: "inherit" }).status ?? 0; break;
     default: console.log(HELP);

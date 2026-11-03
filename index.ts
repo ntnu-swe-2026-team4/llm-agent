@@ -5,6 +5,7 @@
 import { defineTasks } from "./runtime/define.ts";
 import { createLLM, type InputOf, type OutputOf, type ProgressOf, type StateOf } from "./runtime/llm.ts";
 
+import socrates from "./tasks/socrates/task.ts";
 // ↑ 任務的 import（bun llm new 會自動加在這行上面）
 
 // 範例
@@ -14,6 +15,7 @@ import debateJudge from "./examples/debate-judge/task.ts";
 
 /** 正式任務；名稱 = tasks/ 底下的資料夾名稱。後端的 llm.任務名() 只有這些 */
 export const tasks = defineTasks("tasks", {
+  "socrates": socrates,
   // ↑ 任務清單（bun llm new 會自動加在這行上面）
 });
 
@@ -34,6 +36,7 @@ export { LLMError, type LLMErrorCode } from "./runtime/errors.ts";
 export type { Conversation, HistoryMessage, Reply, Turn } from "./runtime/dialogue.ts";
 export type { Answer, RunOptions } from "./runtime/oneshot.ts";
 export type { ConnectionSettings } from "./runtime/config.ts";
+export { setLookup, type LookupFn, type LookupResult, type LookupSource, type LookupStatus } from "./tasks/socrates/lookup.ts";
 
 type Tasks = typeof all;
 /** 輸入型別，例：Input<"position-draft"> */

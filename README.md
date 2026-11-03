@@ -5,7 +5,8 @@
 - 這個 repo 是 LLM 組寫任務、試跑、比較版本的地方。接進 socrates-classroom 時，整個資料夾放成專案的 `llm-framework/`（跟原本的 `llm/` 分開，見第 7 章）。一個任務 = `tasks/<任務>/` 一個資料夾（輸入輸出格式、prompt、測試、評估），加上 `index.ts` 裡註冊的兩行。做完就 commit 這些（第 7 章）。
 - key 只放在 `.env` 的 `GLM_API_KEY`，不進 git。看 prompt、跑測試都不呼叫模型。
 - `bun llm ui` 開一個網頁（第 2 章）：改 prompt、試跑、用 promptfoo 比較版本。
-- 後端怎麼接：見 [BACKEND.md](BACKEND.md)。
+- 後端怎麼接（含 Cloudflare Workers）：見 [BACKEND.md](BACKEND.md)。
+- 正式任務 `socrates`（蘇格拉底對話）的說明在 [tasks/socrates/README.md](tasks/socrates/README.md)。
 
 `examples/` 有三個範例，示範兩種任務怎麼寫。**它們只是範例**，後端的 `llm` 裡沒有它們。這份 README 用它們帶你操作。
 
@@ -33,10 +34,10 @@ bun run check
 看到這樣就是裝好了：
 
 ```
- 50 pass
+ 84 pass
  0 fail
- 128 expect() calls
-Ran 50 tests across 6 files.
+ 224 expect() calls
+Ran 84 tests across 7 files.
 ```
 
 測試數會隨任務多寡改變，看 `0 fail` 就好。`bun run check` 是型別檢查加測試，不會呼叫模型。
@@ -78,7 +79,7 @@ bun llm
 最後兩行：
 
 ```
-正式任務（tasks/）：還沒有，用 bun llm new 建立
+正式任務（tasks/）：socrates
 範例（examples/）：socratic-dialogue、counterexample、debate-judge
 ```
 
@@ -500,8 +501,8 @@ export default defineOneShot({
 |---|---|---|---|
 | `opener` | 開對話 | — | `"ai"`：AI 先開口（對話紀錄是空的時候呼叫，回覆就是開場白，算第 1 輪）；不寫：使用者先說 |
 | `state()` | 第一輪（後端還沒有狀態時） | 無 | 初始狀態物件 |
-| `promptInput(input, state, round)` | 每一輪 AI 回覆前 | 輸入、目前狀態、第幾輪（從 1 開始） | 這一輪給 `main.prompt` 的資料 |
-| `tools(tool)` 裡每個工具的 `run(args, state)` | AI 決定呼叫這個工具時 | AI 填的參數、目前狀態 | 給 AI 看的一句話 |
+| `promptInput(input, state, round, history)` | 每一輪 AI 回覆前；AI 呼叫工具改了狀態後，同一輪會再呼叫一次 | 輸入、目前狀態、第幾輪（從 1 開始）、對話紀錄 | 這一輪給 `main.prompt` 的資料 |
+| `tools(tool)` 裡每個工具的 `run(args, state)` | AI 決定呼叫這個工具時 | AI 填的參數、目前狀態 | 給 AI 看的一句話；要等別的服務（例如查資料）時可以寫成 `async`，回傳 `Promise` |
 | `progress(state, round)` | 每一輪回覆完 | 目前狀態、第幾輪 | 給後端（前端）的進度 |
 
 一輪的流程：
@@ -512,6 +513,7 @@ export default defineOneShot({
   → 渲染 main.prompt，{{#ifEquals stage "ask-stance"}} 這類區塊依階段切換
   → 送給模型：[system] + [user 段落] + 對話紀錄，附上任務的工具
   → AI 判斷學生說了立場 → 呼叫 record_progress → run() 把 coverage.claim 設成 true
+  → 狀態改了：再呼叫一次 promptInput()，用新狀態重新渲染 system，模型照新的 system 接著回覆
   → AI 回覆（一段一段串流給後端）
   → 回傳 { text: 回覆全文, state: 新狀態, progress, round }
 ```
@@ -527,7 +529,12 @@ export default defineOneShot({
 
 **狀態只能放純資料**（字串、數字、陣列、物件），因為後端要把它存進資料庫再傳回來。不要放函式、`Date`、`Map`。
 
+**`promptInput` 同一輪呼叫兩次，結果要一樣**：它可能改狀態（例如記下「這一輪挑戰過」），寫法要讓第二次呼叫不會重複加。做法是先拿掉這一輪記過的，再重新判斷，見 `tasks/socrates/task.ts` 的 `promptInput`。
+
 **工具**：AI 每一輪最多來回呼叫工具 3 次。AI 填的參數不符合 `parameters` 的格式時，框架會把錯誤告訴 AI，讓它重填，不會執行 `run`。
+
+- AI 同一次回應裡已經寫了回覆、又呼叫工具：工具照常執行，這段文字就是這一輪的回覆，不再請它接著寫。
+- AI 只呼叫工具、沒寫回覆：框架不給工具，再請它回覆一次。
 
 **練習**：每個階段的指令在 `prompts/_stage-*.prompt`。改 `_stage-ask-stance.prompt` 的內容，再 `bun llm render socratic-dialogue`，第一輪的任務會變成你寫的內容。
 
@@ -579,7 +586,7 @@ export default defineOneShot({
 |---|---|
 | `tasks/<任務>/` 整個資料夾（`task.ts`、`prompts/`、`task.test.ts`、`inputs/`、`evals.json`、`eval.ts`） | `.env`（key） |
 | `index.ts` 裡這個任務的兩行 | `.runs/`（試跑和評估的紀錄） |
-| `shared/prompts/` 有改的話 | `.promptfoo/`、`node_modules/` |
+| `shared/prompts/` 有改的話 | `.promptfoo/`、`node_modules/`、`dist/` |
 
 commit 前跑一次：
 
@@ -590,6 +597,8 @@ bun run check    # 要 0 fail
 後端那邊不用改：`llm.任務名()` 是照 `index.ts` 的清單產生的，新任務 commit 上去後端就能呼叫。要告訴後端的只有三件事：任務名稱、輸入格式（`task.ts` 的 `input`）、輸出或進度的格式。後端怎麼呼叫見 [BACKEND.md](BACKEND.md)。
 
 改既有任務的 prompt 也一樣：改 `tasks/<任務>/prompts/`，`check` 過了就 commit，後端不用動。
+
+後端跑在 Cloudflare Workers 上，部署前要用 `bun llm bundle` 把 prompt 打包成 `dist/worker.ts`。這個檔不 commit，由後端部署時產生，見 [BACKEND.md](BACKEND.md)。你在本機改 prompt、試跑都不用打包。
 
 ---
 
@@ -607,6 +616,7 @@ bun run check    # 要 0 fail
 | `bun llm view` | 用 promptfoo 自己的網頁看評估結果 | 不用 |
 | `bun llm new <任務> [--dialogue]` | 在 `tasks/` 建立新任務 | 不用 |
 | `bun llm ui` | 網頁介面：寫 prompt、試跑、比較版本 | 試跑、比較時要 |
+| `bun llm bundle` | 產生 Cloudflare Workers 用的入口 `dist/worker.ts` | 不用 |
 | `./demo.sh` | 教學 demo：從空的開始，一步一步做出 `debate-judge` 和 `socratic-dialogue` 兩個範例。修改都在暫存資料夾 | 要 |
 | `./demo.sh --no-model` | 同上，跳過會呼叫模型的步驟 | 不用 |
 
@@ -681,12 +691,13 @@ bun run check    # 要 0 fail
 ```text
 llm-framework/
 ├─ index.ts                  # 後端唯一的入口：任務清單、llm.任務名()、型別、LLMError
-├─ package.json              # 套件（ajv、dotprompt、typebox；開發用 promptfoo）、bun llm 與 bun run check 指令
+├─ package.json              # 套件（dotprompt、typebox；開發用 promptfoo）、bun llm 與 bun run check 指令
 ├─ providers/models.json     # 供應商的網址、模型、請求參數
 ├─ demo.sh                   # 教學 demo：從空的開始把兩個範例做出來
 ├─ docs/images/              # README 裡的網頁截圖
 │
 ├─ tasks/                    # 正式任務，每個一個資料夾
+│  └─ socrates/              # 蘇格拉底對話，有自己的 README
 ├─ examples/                 # 範例，結構和正式任務一樣；後端的 llm 裡沒有
 │  ├─ socratic-dialogue/     # 對話型
 │  ├─ counterexample/        # 單次型
@@ -702,13 +713,15 @@ llm-framework/
 │  ├─ stream.ts              # 串流的回覆：for await 一段段拿，或 await 拿最後的結果
 │  ├─ prepare.ts             # 檢查輸入、渲染 prompt、接上「交回的格式」
 │  ├─ prompt.ts              # 讀 .prompt 檔、處理版本與片段
+│  ├─ files.ts               # 讀檔：一般環境從檔案系統，Workers 從打包內容
 │  ├─ model.ts               # 呼叫 OpenAI 相容的 /chat/completions（串流、工具、重試、逾時、錯誤分類）
 │  ├─ config.ts              # 讀 models.json 和環境變數，決定連到哪裡
 │  ├─ schema.ts              # 檢查格式，產生中文錯誤訊息
 │  └─ errors.ts              # LLMError 和錯誤代碼
 │
 ├─ devtools/                 # LLM 組的工具，後端不載入
-│  ├─ cli.ts                 # bun llm 的指令：render / try / eval / view / new / ui
+│  ├─ cli.ts                 # bun llm 的指令：render / try / eval / view / new / ui / bundle
+│  ├─ bundle.ts              # bun llm bundle：把 prompt 和預先編譯的模板打包成 dist/worker.ts
 │  ├─ scaffold.ts            # 建立、刪除任務（bun llm new 和網頁共用）
 │  ├─ templates/             # bun llm new 複製的範本（對話型、單次型）
 │  ├─ testing.ts             # 測試檔用的 render、tasks

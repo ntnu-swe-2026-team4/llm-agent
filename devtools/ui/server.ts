@@ -102,7 +102,7 @@ async function renderPreview(req: RenderRequest) {
 
   const data = task.kind === "oneshot"
     ? (input.value as Record<string, unknown>)
-    : task.promptInput(input.value, structuredClone(req.state ?? task.state()), req.round ?? 1);
+    : task.promptInput(input.value, structuredClone(req.state ?? task.state()), req.round ?? 1, []);
   const variant = req.variant ?? "main";
   const rendered = await render(task.dir, data, variant, overrides);
   return { ...rendered, unknown: unknownFields(task.dir, data, variant, overrides), data };

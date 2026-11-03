@@ -3,6 +3,7 @@
 import type { Static, TObject } from "typebox";
 import { join } from "node:path";
 import { ROOT } from "./prompt.ts";
+import type { HistoryMessage } from "./dialogue.ts";
 
 // ─────────────────────────── 單次型 ───────────────────────────
 
@@ -39,8 +40,8 @@ export interface ToolDef<S, P extends TObject = TObject> {
   /** 給模型看的說明：什麼時候呼叫、參數怎麼填 */
   description: string;
   parameters: P;
-  /** 模型呼叫時執行：更新狀態，回傳一句話給模型 */
-  run(args: Static<P>, state: S): string;
+  /** 模型呼叫時執行：更新狀態，回傳一句話給模型；可以是 async（例如要連網查詢） */
+  run(args: Static<P>, state: S): string | Promise<string>;
 }
 
 /** tools 裡用的 tool()：讓 run 的 args 型別跟 parameters 對上 */
@@ -58,8 +59,12 @@ export interface DialogueDef<I extends TObject, S, P> {
   opener?: "user" | "ai";
   /** 對話開始時的狀態（純資料：呼叫端會把它存進資料庫，下次再傳回來） */
   state(): S;
-  /** 每一輪 AI 回覆前呼叫，回傳這一輪 main.prompt 拿到的資料；round 從 1 開始 */
-  promptInput(input: Static<I>, state: S, round: number): Record<string, unknown>;
+  /**
+   * 每一輪 AI 回覆前呼叫，回傳這一輪 main.prompt 拿到的資料；round 從 1 開始。
+   * 工具改了狀態後會用同一個 round 再呼叫一次，所以同一輪呼叫幾次結果都要一樣（不要在這裡累加計數）。
+   * history 是到目前為止的對話紀錄（最後一則是使用者剛說的話；開場時是空的）
+   */
+  promptInput(input: Static<I>, state: S, round: number, history: readonly HistoryMessage[]): Record<string, unknown>;
   /** AI 可以呼叫的工具，用來回報對話進度、更新狀態 */
   tools?(tool: ToolFactory<S>): ToolDef<S, any>[];
   /** 每輪回覆完交給呼叫端的進度 */
