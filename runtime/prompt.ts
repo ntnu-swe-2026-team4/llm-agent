@@ -3,11 +3,10 @@
 //   main.<版本>.prompt   同一個任務的其他寫法
 //   _名稱.prompt         片段，用 {{> 名稱}} 插入；shared/prompts/ 的片段每個任務都能用
 import { Dotprompt } from "dotprompt";
-import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
+import { bundled, exists, list, readText, ROOT } from "./files.ts";
 
-export const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
+export { ROOT };
 export const SHARED = join(ROOT, "shared", "prompts");
 
 export interface Rendered {
@@ -20,18 +19,17 @@ export interface Rendered {
 /** 還沒存檔的內容：檔案的完整路徑 → 內容。網頁介面邊打邊預覽時用 */
 export type PromptOverrides = Record<string, string>;
 
-export const read = (path: string, overrides?: PromptOverrides) => overrides?.[path] ?? readFileSync(path, "utf8");
+export const read = (path: string, overrides?: PromptOverrides) => overrides?.[path] ?? readText(path);
 
 export function partials(dir: string, overrides?: PromptOverrides): [string, string][] {
-  if (!existsSync(dir)) return [];
-  return readdirSync(dir)
+  return list(dir)
     .filter(f => f.startsWith("_") && f.endsWith(".prompt"))
     .map(f => [f.slice(1, -".prompt".length), read(join(dir, f), overrides)]);
 }
 
 /** prompts/ 裡有哪些版本：main.prompt → "main"，main.strict.prompt → "strict" */
 export function variants(taskDir: string): string[] {
-  return readdirSync(join(taskDir, "prompts"))
+  return list(join(taskDir, "prompts"))
     .filter(f => /^main(\.[^.]+)?\.prompt$/.test(f))
     .map(f => (f === "main.prompt" ? "main" : f.slice("main.".length, -".prompt".length)));
 }
@@ -47,11 +45,21 @@ export async function render(
 ): Promise<Rendered> {
   const dir = join(taskDir, "prompts");
   const file = variantFile(taskDir, variant);
-  if (!existsSync(file) && overrides?.[file] === undefined) {
+  if (!exists(file) && overrides?.[file] === undefined) {
     throw new Error(`找不到版本「${variant}」，現有版本：${variants(taskDir).join("、")}`);
   }
 
   const dp = new Dotprompt();
+  // Workers 不准在執行時產生程式碼：模板（含片段）改用 bun llm bundle 預先編譯好的
+  const pack = bundled();
+  if (pack) {
+    const hb = (dp as unknown as { handlebars: { compile: (src: string) => unknown; template: (spec: unknown) => unknown } }).handlebars;
+    hb.compile = (src: string) => {
+      const spec = pack.templates[src];
+      if (!spec) throw new Error("模板沒有預先編譯，請重新執行 bun llm bundle");
+      return hb.template(spec);
+    };
+  }
   for (const [name, source] of [...partials(SHARED, overrides), ...partials(dir, overrides)]) dp.definePartial(name, source);
   const source = read(file, overrides);
   const meta = await dp.renderMetadata(source);

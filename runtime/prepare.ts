@@ -1,5 +1,6 @@
 // 呼叫模型前的準備（單次型、對話型共用）：檢查輸入、渲染 prompt
 import type { Registered, Task } from "./define.ts";
+import type { HistoryMessage } from "./dialogue.ts";
 import { LLMError } from "./errors.ts";
 import { render, type Rendered } from "./prompt.ts";
 import { check, strict } from "./schema.ts";
@@ -24,11 +25,11 @@ export function outputInstruction(task: Registered): string {
   ].join("\n");
 }
 
-/** 渲染任務的 prompt（不呼叫模型）。對話型可指定狀態和第幾輪，預設是第一輪的初始狀態 */
+/** 渲染任務的 prompt（不呼叫模型）。對話型可指定狀態、第幾輪和對話紀錄，預設是第一輪的初始狀態 */
 export async function renderTask<T extends Task>(
   task: Registered<T>,
   input: unknown,
-  options: { variant?: string; state?: unknown; round?: number } = {},
+  options: { variant?: string; state?: unknown; round?: number; history?: readonly HistoryMessage[] } = {},
 ): Promise<Rendered> {
   checkInput(task, input);
   if (task.kind === "oneshot") {
@@ -36,7 +37,7 @@ export async function renderTask<T extends Task>(
     return { ...r, system: [r.system, outputInstruction(task)].filter(Boolean).join("\n\n") };
   }
   const state = options.state ?? task.state();
-  return render(task.dir, task.promptInput(input, state, options.round ?? 1), options.variant);
+  return render(task.dir, task.promptInput(input, state, options.round ?? 1, options.history ?? []), options.variant);
 }
 
 /** .prompt 檔頭的 config → 呼叫模型的參數 */

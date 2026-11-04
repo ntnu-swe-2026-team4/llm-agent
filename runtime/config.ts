@@ -9,7 +9,7 @@
 //   <供應商> 是 models.json 裡的名稱轉大寫，例：glm → GLM_API_KEY、GLM_MODEL、GLM_BASE_URL
 //   呼叫端也可以直接傳設定（ConnectionSettings），有傳的蓋過上面全部，例：後端傳自己 config 裡的 key
 //   models.json 每次呼叫都重讀，改了不用重啟
-import { existsSync, readFileSync } from "node:fs";
+import { exists, readText } from "./files.ts";
 import { join } from "node:path";
 import { ROOT } from "./prompt.ts";
 
@@ -34,8 +34,8 @@ export interface Connection {
 }
 
 function providers(): Record<string, ProviderEntry> {
-  if (!existsSync(MODELS_FILE)) return {};
-  return (JSON.parse(readFileSync(MODELS_FILE, "utf8")) as { providers?: Record<string, ProviderEntry> }).providers ?? {};
+  if (!exists(MODELS_FILE)) return {};
+  return (JSON.parse(readText(MODELS_FILE)) as { providers?: Record<string, ProviderEntry> }).providers ?? {};
 }
 
 /** 呼叫端直接給的連線設定；沒給的欄位照環境變數和 models.json */
@@ -45,6 +45,8 @@ export interface ConnectionSettings {
   baseUrl?: string;
   apiKey?: string;
   model?: string;
+  /** 這次連線每個請求都帶上的參數；有給就取代 models.json 的 params */
+  params?: Record<string, unknown>;
   /** true：不呼叫模型（跟 LLM_PROVIDER=mock 一樣） */
   mock?: boolean;
 }
@@ -64,7 +66,7 @@ export function connection(settings: ConnectionSettings = {}): Connection {
     baseUrl: (settings.baseUrl || env(`${prefix}_BASE_URL`) || entry.baseUrl || "").replace(/\/+$/, ""),
     apiKey: settings.apiKey || env(`${prefix}_API_KEY`) || "",
     model: settings.model || env(`${prefix}_MODEL`) || entry.defaultModel || entry.models?.[0] || "",
-    params: entry.params ?? {},
+    params: settings.params ?? entry.params ?? {},
     mock: false,
   };
 }
